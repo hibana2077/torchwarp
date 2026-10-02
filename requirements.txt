@@ -1,0 +1,7 @@
+# Runtime requirements for pip users (uv users: `uv sync --extra cu126`; exact pins live in uv.lock).
+#   pip install -r requirements.txt && pip install -e .
+# For the CUDA kernels, install a torch build whose CUDA major version matches your nvcc, e.g.
+#   pip install torch --index-url https://download.pytorch.org/whl/cu126
+torch>=2.5
+numpy
+ninja

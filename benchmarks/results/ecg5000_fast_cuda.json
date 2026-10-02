@@ -1,0 +1,64 @@
+{
+  "impl": "fast",
+  "device": "cuda",
+  "config": {
+    "dataset": "UCR ECG5000 (500 train / 4500 test, length 140)",
+    "input_len": 84,
+    "output_len": 56,
+    "hidden": 256,
+    "sigma_hidden": 64,
+    "sigma_a": 1.5,
+    "sigma_b": 0.5,
+    "gamma": 1.0,
+    "beta": 1.0,
+    "normalize": false,
+    "optimizer": "Adam",
+    "lr": 0.001,
+    "batch_size": 50,
+    "epochs": 100,
+    "dtype": "float32"
+  },
+  "torch": "2.14.1+cu126",
+  "runs": [
+    {
+      "seed": 0,
+      "train_time_s": 3.2509745124843903,
+      "final_train_loss": -197.59349975585937,
+      "mse": 0.43825560717609224,
+      "dtw": 4.819916730529577,
+      "sdtw_div": 7.469159383285876
+    },
+    {
+      "seed": 1,
+      "train_time_s": 2.1089540760731325,
+      "final_train_loss": -197.5219696044922,
+      "mse": 0.40237442228062353,
+      "dtw": 5.484944561161399,
+      "sdtw_div": 8.097952946927647
+    },
+    {
+      "seed": 2,
+      "train_time_s": 2.218442745215725,
+      "final_train_loss": -197.67819519042968,
+      "mse": 0.4144321857027,
+      "dtw": 4.7318426216848,
+      "sdtw_div": 7.289889621813596
+    },
+    {
+      "seed": 3,
+      "train_time_s": 2.1990370812127367,
+      "final_train_loss": -197.42259826660157,
+      "mse": 0.4367439246834539,
+      "dtw": 5.57226761791117,
+      "sdtw_div": 8.572925246638281
+    },
+    {
+      "seed": 4,
+      "train_time_s": 2.233266453258693,
+      "final_train_loss": -197.3949005126953,
+      "mse": 0.44340010438770777,
+      "dtw": 5.174467336412422,
+      "sdtw_div": 8.33390665820769
+    }
+  ]
+}

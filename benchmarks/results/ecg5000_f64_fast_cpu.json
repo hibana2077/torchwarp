@@ -1,0 +1,40 @@
+{
+  "impl": "fast",
+  "device": "cpu",
+  "config": {
+    "dataset": "UCR ECG5000 (500 train / 4500 test, length 140)",
+    "input_len": 84,
+    "output_len": 56,
+    "hidden": 256,
+    "sigma_hidden": 64,
+    "sigma_a": 1.5,
+    "sigma_b": 0.5,
+    "gamma": 1.0,
+    "beta": 1.0,
+    "normalize": false,
+    "optimizer": "Adam",
+    "lr": 0.001,
+    "batch_size": 50,
+    "epochs": 100,
+    "dtype": "float64"
+  },
+  "torch": "2.14.1+cu126",
+  "runs": [
+    {
+      "seed": 0,
+      "train_time_s": 83.39779689710122,
+      "final_train_loss": -197.5559346302289,
+      "mse": 0.439322945146551,
+      "dtw": 4.824513233092907,
+      "sdtw_div": 7.471649031668328
+    },
+    {
+      "seed": 1,
+      "train_time_s": 82.95972889789846,
+      "final_train_loss": -197.52324788521182,
+      "mse": 0.40397299614277166,
+      "dtw": 5.471430591302583,
+      "sdtw_div": 8.087675649318971
+    }
+  ]
+}

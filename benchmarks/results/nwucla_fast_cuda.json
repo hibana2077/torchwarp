@@ -1,0 +1,84 @@
+{
+  "impl": "fast",
+  "device": "cuda",
+  "config": {
+    "dataset": "NW-UCLA Multiview (all_sqe), 20 joints, 3 views",
+    "frames": 32,
+    "block": 8,
+    "stride": 4,
+    "angles_deg": [
+      -30,
+      -15,
+      0,
+      15,
+      30
+    ],
+    "train_classes": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "test_classes": [
+      6,
+      8,
+      9,
+      11,
+      12
+    ],
+    "hidden": 256,
+    "embed": 64,
+    "gamma": 0.1,
+    "max_shift": 1,
+    "temperature": 1.0,
+    "way": 5,
+    "shot": 1,
+    "train_queries_per_class": 1,
+    "test_queries_per_class": 5,
+    "train_episodes": 300,
+    "test_episodes": 300,
+    "optimizer": "Adam",
+    "lr": 0.001,
+    "dtype": "float32"
+  },
+  "n_sequences": 1482,
+  "torch": "2.14.1+cu126",
+  "runs": [
+    {
+      "seed": 0,
+      "accuracy": 38.54666666666667,
+      "final_train_loss": 1.0762830346822738,
+      "train_time_s": 0.8103822443517856,
+      "test_time_s": 0.3396572506171651
+    },
+    {
+      "seed": 1,
+      "accuracy": 38.14666666666667,
+      "final_train_loss": 0.8788979679346085,
+      "train_time_s": 0.6272944851662032,
+      "test_time_s": 0.34230923803988844
+    },
+    {
+      "seed": 2,
+      "accuracy": 34.22666666666667,
+      "final_train_loss": 1.0107696421444416,
+      "train_time_s": 0.6301286556408741,
+      "test_time_s": 0.336840239004232
+    },
+    {
+      "seed": 3,
+      "accuracy": 34.44,
+      "final_train_loss": 1.20957872569561,
+      "train_time_s": 0.6213704284164123,
+      "test_time_s": 0.336487983528059
+    },
+    {
+      "seed": 4,
+      "accuracy": 32.56,
+      "final_train_loss": 1.3519719257950782,
+      "train_time_s": 0.6138800331391394,
+      "test_time_s": 0.3389359900029376
+    }
+  ]
+}

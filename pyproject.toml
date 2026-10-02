@@ -1,0 +1,83 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "torchwarp"
+version = "0.1.0"
+description = "Fast, differentiable time & viewpoint warping for PyTorch: uDTW and JEANIE with CUDA kernels."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+authors = [{ name = "hibana2077", email = "hibana2077@gmail.com" }]
+keywords = [
+    "dtw", "soft-dtw", "udtw", "jeanie", "time-warping", "sequence-alignment",
+    "skeleton-action-recognition", "few-shot", "pytorch", "cuda",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: C++",
+    "Environment :: GPU :: NVIDIA CUDA",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "torch>=2.5",
+    "numpy",
+    "ninja",     # JIT build of the CUDA extensions
+]
+
+# Pick the PyTorch build with an extra: `uv sync --extra cu126` (or cu128 / cpu).
+# Without an extra, torch comes from PyPI (on Linux that is a CUDA 13 build;
+# the CUDA kernels then need a matching nvcc 13.x).
+[project.optional-dependencies]
+cpu = ["torch>=2.5"]
+cu126 = ["torch>=2.5"]
+cu128 = ["torch>=2.5"]
+
+[dependency-groups]
+dev = ["pytest>=8", "scipy"]
+
+[project.urls]
+Homepage = "https://github.com/hibana2077/torchwarp"
+Issues = "https://github.com/hibana2077/torchwarp/issues"
+"uDTW (reference)" = "https://github.com/LeiWangR/uDTW"
+"JEANIE (reference)" = "https://github.com/LeiWangR/JEANIE"
+
+[tool.uv]
+conflicts = [[{ extra = "cpu" }, { extra = "cu126" }, { extra = "cu128" }]]
+
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cpu", extra = "cpu" },
+    { index = "pytorch-cu126", extra = "cu126" },
+    { index = "pytorch-cu128", extra = "cu128" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/torchwarp"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/torchwarp", "tests", "README.md", "LICENSE", "CITATION.cff"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-p no:logging"

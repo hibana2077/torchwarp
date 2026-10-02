@@ -1,0 +1,64 @@
+{
+  "impl": "ref",
+  "device": "cpu",
+  "config": {
+    "dataset": "UCR ECG5000 (500 train / 4500 test, length 140)",
+    "input_len": 84,
+    "output_len": 56,
+    "hidden": 256,
+    "sigma_hidden": 64,
+    "sigma_a": 1.5,
+    "sigma_b": 0.5,
+    "gamma": 1.0,
+    "beta": 1.0,
+    "normalize": false,
+    "optimizer": "Adam",
+    "lr": 0.001,
+    "batch_size": 50,
+    "epochs": 100,
+    "dtype": "float32"
+  },
+  "torch": "2.14.1+cu126",
+  "runs": [
+    {
+      "seed": 0,
+      "train_time_s": 857.9781919674715,
+      "final_train_loss": -197.57221527099608,
+      "mse": 0.43890106457452366,
+      "dtw": 4.832287988051716,
+      "sdtw_div": 7.475525343852234
+    },
+    {
+      "seed": 1,
+      "train_time_s": 883.6789795003133,
+      "final_train_loss": -197.517626953125,
+      "mse": 0.4022156936002544,
+      "dtw": 5.457743007848262,
+      "sdtw_div": 8.067185977738784
+    },
+    {
+      "seed": 2,
+      "train_time_s": 880.4948345326702,
+      "final_train_loss": -197.6892333984375,
+      "mse": 0.4144719605652176,
+      "dtw": 4.74063229811426,
+      "sdtw_div": 7.297020729703957
+    },
+    {
+      "seed": 3,
+      "train_time_s": 878.514314990316,
+      "final_train_loss": -197.43106384277343,
+      "mse": 0.43641795510440984,
+      "dtw": 5.554548678632194,
+      "sdtw_div": 8.560595423833979
+    },
+    {
+      "seed": 4,
+      "train_time_s": 888.9940714828554,
+      "final_train_loss": -197.3927429199219,
+      "mse": 0.4436630677162637,
+      "dtw": 5.179452229455453,
+      "sdtw_div": 8.338817121947097
+    }
+  ]
+}
