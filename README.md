@@ -28,16 +28,16 @@ uv sync --extra cu126
 ```python
 import torch, torch.nn as nn, torchwarp
 
-X = torch.randn(16, 30, 8, device="cuda", requires_grad=True)    # [B, N, D]
-Y = torch.randn(16, 40, 8, device="cuda")                        # [B, M, D]
+X = torch.randn(16, 30, 8, device="cuda", requires_grad=True) # [B, N, D]
+Y = torch.randn(16, 40, 8, device="cuda") # [B, M, D]
 sigma_net = nn.Sequential(nn.Linear(8, 32),
                           nn.ReLU(),
                           nn.Linear(32, 1),
                           nn.Softplus()
                         ).cuda()
 
-udtw = torchwarp.uDTW(gamma=1.0, normalize=True)                 # normalize: d(x,y) - [d(x,x) + d(y,y)] / 2
-d, omega = udtw(X, Y, sigma_net(X) + 1e-3, sigma_net(Y) + 1e-3, beta=1.0)   # sigma: [B, N, 1], [B, M, 1]
+udtw = torchwarp.uDTW(gamma=1.0, normalize=True) # normalize: d(x,y) - [d(x,x) + d(y,y)] / 2
+d, omega = udtw(X, Y, sigma_net(X) + 1e-3, sigma_net(Y) + 1e-3, beta=1.0) # sigma: [B, N, 1], [B, M, 1]
 loss = (d + omega).mean()
 loss.backward()
 ```
