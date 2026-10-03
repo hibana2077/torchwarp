@@ -18,7 +18,7 @@ Distances (Euclidean base distance between block embeddings):
   * jeanie:         JEANIE-1D over the K views
 
 Usage:
-  python benchmarks/nwucla_fewshot.py --method jeanie
+  python examples/nwucla_fewshot.py --method jeanie
 """
 
 import argparse
@@ -35,7 +35,7 @@ import torch.nn.functional as F
 import torchwarp
 
 ROOT = Path(__file__).resolve().parents[1]
-DATA = ROOT / "benchmarks" / "data" / "nwucla" / "all_sqe"
+DATA = ROOT / "examples" / "data" / "nwucla" / "all_sqe"
 
 BASE = dict(
     frames=32, block=8, stride=4, angles_deg=[-30, -15, 0, 15, 30],
@@ -239,7 +239,7 @@ def main():
 
     cfg = dict(BASE, **METHODS[args.method])
     seqs = load_dataset(cfg)
-    out = Path(args.out or ROOT / "benchmarks" / "results" / "nwucla_{}.json".format(args.method))
+    out = Path(args.out or ROOT / "examples" / "results" / "nwucla_{}.json".format(args.method))
     out.parent.mkdir(parents=True, exist_ok=True)
     runs = []
     for seed in args.seeds:

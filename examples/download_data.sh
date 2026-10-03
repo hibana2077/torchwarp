@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Download the datasets used by the real-data benchmarks into benchmarks/data/.
+# Download the datasets used by the examples into examples/data/.
 #   UCR ECG5000 (uDTW forecasting)      ~10 MB  timeseriesclassification.com
 #   NW-UCLA Multiview skeletons (JEANIE) ~14 MB  all_sqe.zip as distributed with CTR-GCN
 set -euo pipefail

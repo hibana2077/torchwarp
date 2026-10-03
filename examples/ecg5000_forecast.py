@@ -13,7 +13,7 @@ fixed evaluation SigmaNet (a uDTW run with the base configuration and seed
 EVAL_SEED), shared by every model.
 
 Usage:
-  python benchmarks/ecg5000_forecast.py --loss udtw
+  python examples/ecg5000_forecast.py --loss udtw
 """
 
 import argparse
@@ -29,8 +29,8 @@ import torch.nn.functional as F
 from torchwarp import soft_dtw, uDTW
 
 ROOT = Path(__file__).resolve().parents[1]
-DATA = ROOT / "benchmarks" / "data"
-RESULTS = ROOT / "benchmarks" / "results"
+DATA = ROOT / "examples" / "data"
+RESULTS = ROOT / "examples" / "results"
 
 BASE = dict(
     input_len=84, output_len=56, hidden=256,

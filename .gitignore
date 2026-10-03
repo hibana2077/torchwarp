@@ -9,8 +9,8 @@ dist/
 .mypy_cache/
 .DS_Store
 
-# benchmark datasets (fetch with benchmarks/download_data.sh)
-benchmarks/data/
+# example datasets (fetch with examples/download_data.sh)
+examples/data/
 
 # experiment outputs
-benchmarks/results/
+examples/results/
