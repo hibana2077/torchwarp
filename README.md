@@ -1,26 +1,25 @@
 # torchwarp
 
-Unofficial PyTorch/CUDA reimplementation of uncertainty-DTW (uDTW) and JEANIE, with soft-DTW and Free Viewpoint Matching (FVM). The official code is at [uDTW](https://github.com/LeiWangR/uDTW) and [JEANIE](https://github.com/LeiWangR/JEANIE).
+Faster PyTorch/CUDA version of uncertainty-DTW (uDTW) and JEANIE, with soft-DTW and Free Viewpoint Matching (FVM).
 
 ## Usage
+
+Using this respontory needs `uv`, you can use `pip install uv` to get uv.
+
+### Setup
 
 ```bash
 git clone https://github.com/hibana2077/torchwarp && cd torchwarp
 uv sync --extra cu126                      # or --extra cu128 / --extra cpu; pip: pip install -r requirements.txt -e .
-bash benchmarks/download_data.sh           # ECG5000 + NW-UCLA
-uv run python benchmarks/ecg5000_forecast.py --loss udtw         # euclidean | dtw | sdtw_div | udtw
-uv run python benchmarks/nwucla_fewshot.py --method jeanie       # sdtw | sdtw_div | udtw | fvm | jeanie
 ```
+
+### Code usage
 
 ```python
 import torchwarp
 d, omega = torchwarp.uDTW(gamma=1.0, normalize=True)(X, Y, sigma_x, sigma_y, beta=1.0)  # [B,N,D], [B,M,D], [B,N,1], [B,M,1]
 d = torchwarp.JEANIE(gamma=0.1, max_shift=1)(query, support)                          # [B,K,T,D], [B,U,D]
 ```
-
-The CUDA kernels are compiled on first use and need `nvcc` with the same CUDA major version as the installed torch.
-
-Results below: mean ± std over seeds 42, 43, 44; one NVIDIA TITAN RTX; PyTorch 2.14.1+cu126; float32. Train time is the wall-clock time of all training steps.
 
 ## ECG5000
 
@@ -64,11 +63,7 @@ NW-UCLA Multiview 3D skeletons (10 actions, 20 joints, 3 views). Each sequence i
 | FVM | 41.15 ± 0.43 | 0.92 ± 0.15 |
 | JEANIE | 37.08 ± 2.37 | 0.67 ± 0.11 |
 
-## References
-
-[1] L. Wang and P. Koniusz. Uncertainty-DTW for Time Series and Sequences. ECCV 2022. Code: <https://github.com/LeiWangR/uDTW>
-
-[2] L. Wang, J. Liu, L. Zheng, T. Gedeon and P. Koniusz. Meet JEANIE: a Similarity Measure for 3D Skeleton Sequences via Temporal-Viewpoint Alignment. IJCV 132(9):4091–4122, 2024. Code: <https://github.com/LeiWangR/JEANIE>
+## Citation
 
 ```bibtex
 @inproceedings{wang2022uncertainty,
