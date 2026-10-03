@@ -23,52 +23,74 @@ uv sync --extra cu126
 
 ### Using uDTW
 
-`uDTW` takes two batches of sequences and their per-frame standard deviations σ (e.g. predicted by a small SigmaNet) and returns the uncertainty-weighted distance and the β-weighted penalty Ω, both of shape `[B]`.
+`uDTW` compares two batches of sequences, given a per-frame
+uncertainty (sigma) for each, e.g. from a small SigmaNet. It returns
+the distance and the uncertainty penalty, one value per pair.
 
 ```python
-import torch, torch.nn as nn
+import torch
+import torch.nn as nn
 import torchwarp
 
-X = torch.randn(16, 30, 8, device="cuda", requires_grad=True) # [B, N, D]
-Y = torch.randn(16, 40, 8, device="cuda") # [B, M, D]
-sigma_net = nn.Sequential(nn.Linear(8, 32),
-                          nn.ReLU(),
-                          nn.Linear(32, 1),
-                          nn.Softplus()
-                        ).cuda()
+# sequences: [batch, length, features]
+X = torch.randn(16, 30, 8, device="cuda", requires_grad=True)
+Y = torch.randn(16, 40, 8, device="cuda")
 
-udtw = torchwarp.uDTW(gamma=1.0, normalize=True) # normalize: d(x,y) - [d(x,x) + d(y,y)] / 2
-d, omega = udtw(X, Y, sigma_net(X) + 1e-3, sigma_net(Y) + 1e-3, beta=1.0) # sigma: [B, N, 1], [B, M, 1]
+# per-frame sigma: [batch, length, 1], must be positive
+sigma_net = nn.Sequential(
+    nn.Linear(8, 32),
+    nn.ReLU(),
+    nn.Linear(32, 1),
+    nn.Softplus(),
+).cuda()
+sx = sigma_net(X) + 1e-3
+sy = sigma_net(Y) + 1e-3
+
+udtw = torchwarp.uDTW(gamma=1.0, normalize=True)
+d, omega = udtw(X, Y, sx, sy, beta=1.0)
 loss = (d + omega).mean()
 loss.backward()
 ```
 
-`uDTW` builds the per-pair matrices inside the CUDA kernel. For a custom distance or penalty, the two steps can be run separately: `pairwise_matrices` builds the default `[B, N, M]` matrices (cost `‖x_i − y_j‖² / Σ_ij`, penalty `β · log Σ_ij`, with `Σ_ij = ½(σ_i² + σ'_j²)`), and `udtw_from_matrices` runs the dynamic program on any cost and penalty (no `normalize`).
+For a custom distance or penalty, build the pairwise matrices
+yourself and pass them to `udtw_from_matrices`:
 
 ```python
-sx, sy = sigma_net(X) + 1e-3, sigma_net(Y) + 1e-3
-cost, penalty, variance = torchwarp.pairwise_matrices(X, Y, sx, sy, beta=1.0)  # each [B, N, M]
-d, omega = torchwarp.udtw_from_matrices(cost, penalty, gamma=1.0)            # same as uDTW(gamma=1.0)
+# default matrices, each [batch, len_x, len_y]
+cost, penalty, variance = torchwarp.pairwise_matrices(
+    X, Y, sx, sy, beta=1.0)
+d, omega = torchwarp.udtw_from_matrices(cost, penalty, gamma=1.0)
 
-# e.g. a cosine distance instead of the squared Euclidean one
-cos = 1 - torch.nn.functional.cosine_similarity(X.unsqueeze(2), Y.unsqueeze(1), dim=-1)
-d, omega = torchwarp.udtw_from_matrices(cos / variance, penalty, gamma=1.0)
+# e.g. a cosine distance instead of the default one
+cos = 1 - torch.nn.functional.cosine_similarity(
+    X.unsqueeze(2), Y.unsqueeze(1), dim=-1)
+d, omega = torchwarp.udtw_from_matrices(
+    cos / variance, penalty, gamma=1.0)
 ```
 
 ### Using JEANIE
 
-`JEANIE` aligns a query observed from K simulated viewpoints with a support sequence, jointly over time and viewpoint. `max_shift` (ι) limits the viewpoint change between neighbouring steps.
+`JEANIE` aligns a query, seen from several simulated viewpoints,
+with a support sequence over both time and viewpoint. `max_shift`
+limits how far the viewpoint can move between neighbouring steps.
 
 ```python
-query = torch.randn(8, 5, 10, 64, device="cuda", requires_grad=True)   # [B, K, T, D]
-support = torch.randn(8, 12, 64, device="cuda")                         # [B, U, D]
+# query: [batch, views, length, features]
+query = torch.randn(8, 5, 10, 64, device="cuda", requires_grad=True)
+# support: [batch, length, features]
+support = torch.randn(8, 12, 64, device="cuda")
 
-jeanie = torchwarp.JEANIE(gamma=0.1, max_shift=1, metric="euclidean")   # metric: euclidean | sqeuclidean | rbf
-dist = jeanie(query, support)                                           # [B]
-dist, R = jeanie(query, support, return_accumulator=True)               # R: [B, K, T, U], differentiable
+jeanie = torchwarp.JEANIE(gamma=0.1, max_shift=1)
+dist = jeanie(query, support)
+dist.sum().backward()
 
-query_2d = torch.randn(8, 3, 3, 10, 64, device="cuda")                  # [B, K1, K2, T, D] (azimuth x altitude)
-dist_2d = torchwarp.JEANIE(gamma=0.1, max_shift=(1, 1))(query_2d, support)
+# also return the (differentiable) alignment table
+dist, R = jeanie(query, support, return_accumulator=True)
+
+# two viewpoint axes: [batch, views_1, views_2, length, features]
+query_2d = torch.randn(8, 3, 3, 10, 64, device="cuda")
+jeanie_2d = torchwarp.JEANIE(gamma=0.1, max_shift=(1, 1))
+dist_2d = jeanie_2d(query_2d, support)
 ```
 
 ## Results
@@ -77,7 +99,7 @@ Mean ± std over seeds 42, 43, 44. Hyperparameters are the defaults in [`example
 
 ### Speed
 
-Mean time per training step (ms), official implementation vs torchwarp on the same task and settings. CPU: Intel Core i9-10900K (10 threads); GPU: NVIDIA TITAN RTX.
+Mean time per training step (ms), official implementation vs torchwarp on the same task and settings.
 
 | method (task) | official CPU | torchwarp CPU | speed-up | official GPU | torchwarp GPU | speed-up |
 | --- | --- | --- | --- | --- | --- | --- |
