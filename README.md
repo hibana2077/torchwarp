@@ -26,7 +26,8 @@ uv sync --extra cu126
 `uDTW` takes two batches of sequences and their per-frame standard deviations σ (e.g. predicted by a small SigmaNet) and returns the uncertainty-weighted distance and the β-weighted penalty Ω, both of shape `[B]`.
 
 ```python
-import torch, torch.nn as nn, torchwarp
+import torch, torch.nn as nn
+import torchwarp
 
 X = torch.randn(16, 30, 8, device="cuda", requires_grad=True) # [B, N, D]
 Y = torch.randn(16, 40, 8, device="cuda") # [B, M, D]
