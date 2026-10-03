@@ -71,7 +71,7 @@ NW-UCLA Multiview 3D skeletons (10 actions, 20 joints, 3 views). Each sequence i
 
 ## Citation
 
-If you find this project is benefits for your research, please consider to cite following original papers.
+If you find this project useful for your research, please cite the following original papers.
 
 ### uDTW
 
