@@ -43,7 +43,17 @@ loss = (d + omega).mean()
 loss.backward()
 ```
 
-To run the dynamic program on your own cost and penalty matrices `[B, N, M]`, use `torchwarp.udtw_from_matrices(cost, penalty, gamma)`; `torchwarp.pairwise_matrices(X, Y, sigma_x, sigma_y, beta)` builds the default ones.
+`uDTW` builds the per-pair matrices inside the CUDA kernel. For a custom distance or penalty, the two steps can be run separately: `pairwise_matrices` builds the default `[B, N, M]` matrices (cost `‖x_i − y_j‖² / Σ_ij`, penalty `β · log Σ_ij`, with `Σ_ij = ½(σ_i² + σ'_j²)`), and `udtw_from_matrices` runs the dynamic program on any cost and penalty (no `normalize`).
+
+```python
+sx, sy = sigma_net(X) + 1e-3, sigma_net(Y) + 1e-3
+cost, penalty, variance = torchwarp.pairwise_matrices(X, Y, sx, sy, beta=1.0)  # each [B, N, M]
+d, omega = torchwarp.udtw_from_matrices(cost, penalty, gamma=1.0)            # same as uDTW(gamma=1.0)
+
+# e.g. a cosine distance instead of the squared Euclidean one
+cos = 1 - torch.nn.functional.cosine_similarity(X.unsqueeze(2), Y.unsqueeze(1), dim=-1)
+d, omega = torchwarp.udtw_from_matrices(cos / variance, penalty, gamma=1.0)
+```
 
 ### Using JEANIE
 
