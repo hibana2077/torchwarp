@@ -1,19 +1,25 @@
 # torchwarp
 
-Faster PyTorch/CUDA version of uncertainty-DTW (uDTW) and JEANIE, with soft-DTW and Free Viewpoint Matching (FVM).
+Faster PyTorch version of uncertainty-DTW (uDTW) and JEANIE.
 
-## Usage
+## Installation
 
-Using this respontory needs `uv`, you can use `pip install uv` to get uv.
-
-### Setup
+### For pip user
 
 ```bash
 git clone https://github.com/hibana2077/torchwarp && cd torchwarp
-uv sync --extra cu126                      # or --extra cu128 / --extra cpu; pip: pip install -r requirements.txt -e .
+pip install -r requirements.txt -e .
 ```
 
-### Code usage
+### For uv user
+
+```bash
+git clone https://github.com/hibana2077/torchwarp && cd torchwarp
+uv sync --extra cu126
+# or --extra cu128 / --extra cpu;
+```
+
+## usage
 
 ```python
 import torchwarp
@@ -65,14 +71,32 @@ NW-UCLA Multiview 3D skeletons (10 actions, 20 joints, 3 views). Each sequence i
 
 ## Citation
 
+If you find this project is benefits for your research, please consider to cite following original papers.
+
+### uDTW
+
 ```bibtex
 @inproceedings{wang2022uncertainty,
-  title={Uncertainty-DTW for Time Series and Sequences}, author={Wang, Lei and Koniusz, Piotr},
-  booktitle={European Conference on Computer Vision (ECCV)}, pages={176--195}, year={2022}}
-@article{wang2024meet,
-  title={Meet JEANIE: a Similarity Measure for 3D Skeleton Sequences via Temporal-Viewpoint Alignment},
-  author={Wang, Lei and Liu, Jun and Zheng, Liang and Gedeon, Tom and Koniusz, Piotr},
-  journal={International Journal of Computer Vision}, volume={132}, number={9}, pages={4091--4122}, year={2024}}
+  title={Uncertainty-dtw for time series and sequences},
+  author={Wang, Lei and Koniusz, Piotr},
+  booktitle={European Conference on Computer Vision},
+  pages={176--195},
+  year={2022},
+  organization={Springer}
+}
 ```
 
-MIT License.
+### JEANIE
+
+```bibtex
+@article{wang2024meet,
+  title={Meet jeanie: a similarity measure for 3d skeleton sequences via temporal-viewpoint alignment},
+  author={Wang, Lei and Liu, Jun and Zheng, Liang and Gedeon, Tom and Koniusz, Piotr},
+  journal={International Journal of Computer Vision},
+  volume={132},
+  number={9},
+  pages={4091--4122},
+  year={2024},
+  publisher={Springer}
+}
+```
