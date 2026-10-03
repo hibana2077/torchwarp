@@ -1,6 +1,6 @@
 # torchwarp
 
-Unofficial PyTorch/CUDA reimplementation of uncertainty-DTW (uDTW) [1] and JEANIE [2], with soft-DTW and Free Viewpoint Matching (FVM). The official code is at [LeiWangR/uDTW](https://github.com/LeiWangR/uDTW) and [LeiWangR/JEANIE](https://github.com/LeiWangR/JEANIE).
+Unofficial PyTorch/CUDA reimplementation of uncertainty-DTW (uDTW) and JEANIE, with soft-DTW and Free Viewpoint Matching (FVM). The official code is at [uDTW](https://github.com/LeiWangR/uDTW) and [JEANIE](https://github.com/LeiWangR/JEANIE).
 
 ## Usage
 
