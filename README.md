@@ -71,47 +71,43 @@ query_2d = torch.randn(8, 3, 3, 10, 64, device="cuda")                  # [B, K1
 dist_2d = torchwarp.JEANIE(gamma=0.1, max_shift=(1, 1))(query_2d, support)
 ```
 
-## ECG5000
+## Results
 
-UCR ECG5000 (500 train / 4500 test series, length 140). An MLP (84 → 256 → 56, ReLU) predicts the last 56 steps from the first 84. Adam, batch size 50, 100 epochs (1000 steps). Frame cost: squared Euclidean.
+Mean ± std over seeds 42, 43, 44. Hyperparameters are the defaults in [`examples/`](examples/); run `bash examples/download_data.sh` and then `python examples/ecg5000_forecast.py --loss <loss>` or `python examples/nwucla_fewshot.py --method <method>`.
 
-| training loss | hyperparameters |
+### Speed
+
+Mean time per training step (ms), official implementation vs torchwarp on the same task and settings. CPU: Intel Core i9-10900K (10 threads); GPU: NVIDIA TITAN RTX.
+
+| method (task) | official CPU | torchwarp CPU | speed-up | official GPU | torchwarp GPU | speed-up |
+| --- | --- | --- | --- | --- | --- | --- |
+| uDTW (ECG5000) | 957.6 | 84.6 | 11× | 1809.7 | 1.35 | 1345× |
+| uDTW (NW-UCLA) | 37.5 | 22.0 | 1.7× | 92.2 | 6.18 | 15× |
+| FVM (NW-UCLA) | 157.6 | 5.75 | 27× | 363.9 | 2.93 | 124× |
+| JEANIE (NW-UCLA) | 961.8 | 10.03 | 96× | 2362.3 | 2.17 | 1091× |
+
+### Time series – ECG5000
+
+UCR ECG5000: forecast the last 40% of each series from the first 60%. Rows: training loss; columns: test metric (lower is better).
+
+| training loss | MSE | DTW | sDTW div. | uDTW |
+| --- | --- | --- | --- | --- |
+| Euclidean | 0.2161 ± 0.0065 | 5.5127 ± 0.3189 | 7.8376 ± 0.3005 | 2.5342 ± 0.0911 |
+| DTW | 0.7299 ± 0.1767 | 5.3317 ± 0.4190 | 19.0465 ± 3.5771 | 9.3703 ± 2.7353 |
+| sDTW div. | 0.7248 ± 0.1845 | 5.3684 ± 0.5537 | 19.0471 ± 3.7483 | 9.2619 ± 2.7557 |
+| uDTW | 0.2698 ± 0.0138 | 6.8878 ± 0.4812 | 8.4908 ± 0.4687 | 2.7986 ± 0.1459 |
+
+### Few-shot – NW-UCLA
+
+Cross-view 5-way 1-shot action recognition on NW-UCLA (train classes 1–5, test classes 6, 8, 9, 11, 12; queries from the unseen view 3).
+
+| method | accuracy (%) |
 | --- | --- |
-| Euclidean | lr 1e-3 |
-| DTW | lr 1e-3 |
-| sDTW div. | γ = 0.001, lr 1e-3 |
-| uDTW | γ = 1, β = 1, normalize = True, lr 3e-3; SigmaNet 56 → 64 → 56, σ = 2.0·sigmoid(·) + 0.1 |
-
-Test metrics: MSE (per time step), DTW, sDTW div. (γ = 1) and uDTW (γ = 1, β = 1, normalize = True), all in float64. σ for the uDTW metric comes from one fixed SigmaNet (uDTW loss, σ = 1.5·sigmoid(·) + 0.5, lr 1e-3, seed 100), shared by all models.
-
-| training loss | MSE ↓ | DTW ↓ | sDTW div. ↓ | uDTW ↓ | train time (s) |
-| --- | --- | --- | --- | --- | --- |
-| Euclidean | 0.2161 ± 0.0065 | 5.5127 ± 0.3189 | 7.8376 ± 0.3005 | 2.5342 ± 0.0911 | 0.77 ± 0.06 |
-| DTW | 0.7299 ± 0.1767 | 5.3317 ± 0.4190 | 19.0465 ± 3.5771 | 9.3703 ± 2.7353 | 53.59 ± 0.77 |
-| sDTW div. | 0.7248 ± 0.1845 | 5.3684 ± 0.5537 | 19.0471 ± 3.7483 | 9.2619 ± 2.7557 | 2.02 ± 0.12 |
-| uDTW | 0.2698 ± 0.0138 | 6.8878 ± 0.4812 | 8.4908 ± 0.4687 | 2.7986 ± 0.1459 | 4.36 ± 0.60 |
-
-DTW training uses a plain PyTorch dynamic program; sDTW div. and uDTW use the torchwarp CUDA kernels.
-
-## NW-UCLA
-
-NW-UCLA Multiview 3D skeletons (10 actions, 20 joints, 3 views). Each sequence is resampled to 32 frames and split into 7 temporal blocks (8 frames, stride 4). Block encoder: MLP 480 → 256 → 64. Query viewpoints are simulated by rotations about the vertical axis. Training: 300 5-way 1-shot episodes on classes {1, 2, 3, 4, 5} (views 1 + 2), cross-entropy over −distance / τ, Adam. Testing: 300 5-way 1-shot episodes on classes {6, 8, 9, 11, 12}, supports from views 1 + 2, 5 queries per class from view 3. Base distance: Euclidean.
-
-| method | viewpoints (deg) | hyperparameters |
-| --- | --- | --- |
-| sDTW | 0 | γ = 0.001, τ = 1, lr 1e-3 |
-| sDTW div. | 0 | γ = 0.001, τ = 1, lr 1e-3 |
-| uDTW | 0 | γ = 0.1, β = 3, normalize = True, τ = 1, lr 3e-4; σ head 64 → 32 → 1, σ = 1.5·sigmoid(·) + 0.5 |
-| FVM | −60, −30, 0, 30, 60 | γ = 0.1, τ = 3, lr 3e-4 |
-| JEANIE | −60, −30, 0, 30, 60 | γ = 1, ι = 2, τ = 10, lr 1e-3 |
-
-| method | accuracy (%) ↑ | train time (s) |
-| --- | --- | --- |
-| sDTW | 24.41 ± 2.47 | 0.89 ± 0.07 |
-| sDTW div. | 24.60 ± 3.56 | 1.65 ± 0.13 |
-| uDTW | 24.06 ± 8.43 | 2.04 ± 0.04 |
-| FVM | 41.15 ± 0.43 | 0.92 ± 0.15 |
-| JEANIE | 37.08 ± 2.37 | 0.67 ± 0.11 |
+| sDTW | 24.41 ± 2.47 |
+| sDTW div. | 24.60 ± 3.56 |
+| uDTW | 24.06 ± 8.43 |
+| FVM | 41.15 ± 0.43 |
+| JEANIE | 37.08 ± 2.37 |
 
 ## Citation
 
