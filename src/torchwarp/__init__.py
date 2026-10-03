@@ -33,6 +33,8 @@ from .udtw import (
     udtw_from_matrices,
 )
 
+from . import paths
+
 __version__ = "0.1.0"
 
 __all__ = [

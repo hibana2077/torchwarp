@@ -37,6 +37,7 @@ dependencies = [
 cpu = ["torch>=2.5"]
 cu126 = ["torch>=2.5"]
 cu128 = ["torch>=2.5"]
+vis = ["matplotlib>=3.7"]
 
 [dependency-groups]
 dev = ["pytest>=8", "scipy"]

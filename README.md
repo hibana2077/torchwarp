@@ -93,6 +93,42 @@ jeanie_2d = torchwarp.JEANIE(gamma=0.1, max_shift=(1, 1))
 dist_2d = jeanie_2d(query_2d, support)
 ```
 
+### Visualization
+
+`torchwarp.plot` draws warping paths in the style of the uDTW and
+JEANIE papers. It needs matplotlib: `pip install -e ".[vis]"` (or
+`uv sync --extra cu126 --extra vis`).
+
+```python
+from torchwarp import plot
+
+# uDTW paths and uncertainty (uDTW paper, Fig. 2)
+fig = plot.udtw_figure(X, Y, sx, sy, gammas=(0.01, 0.1))
+fig.savefig("udtw_paths.png")
+
+# soft-DTW / FVM / JEANIE paths (JEANIE paper, Fig. 7)
+angles = [-60, -30, 0, 30, 60]  # one per query view
+fig = plot.viewpoint_figure(query, support, angles)
+fig.savefig("viewpoint_paths.png")
+```
+
+To draw skeletons as below, also pass `query_poses`, `support_poses`
+and `bones`. The paths themselves are available without matplotlib:
+
+```python
+a = torchwarp.paths.jeanie(query, support, gamma=0.1)
+a.soft  # path probabilities: [batch, views, len_q, len_s]
+a.path  # hard path per pair: [(t, u, view), ...]
+```
+
+ECG5000, forecast vs. ground truth of a trained uDTW model:
+
+![uDTW paths on ECG5000](assets/udtw_paths_ecg5000.png)
+
+NW-UCLA, query vs. support of the same action (donning):
+
+![soft-DTW, FVM and JEANIE paths on NW-UCLA](assets/viewpoint_paths_nwucla.png)
+
 ## Results
 
 Mean ± std over seeds 42, 43, 44. Hyperparameters are the defaults in [`examples/`](examples/); run `bash examples/download_data.sh` and then `python examples/ecg5000_forecast.py --loss <loss>` or `python examples/nwucla_fewshot.py --method <method>`.
