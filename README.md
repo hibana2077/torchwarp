@@ -56,41 +56,6 @@ query_2d = torch.randn(8, 3, 3, 10, 64, device="cuda")                  # [B, K1
 dist_2d = torchwarp.JEANIE(gamma=0.1, max_shift=(1, 1))(query_2d, support)
 ```
 
-### soft-DTW, FVM and cost functions
-
-```python
-cost = torchwarp.euclidean_cost(query, support)          # [B, K, T, U]; also squared_euclidean_cost, rbf_cost
-torchwarp.soft_dtw(cost[:, 0], gamma=0.1)                 # soft-DTW on [B, T, U]
-torchwarp.fvm_query_only_1d(cost, gamma=0.1)              # Free Viewpoint Matching on [B, K, T, U]
-torchwarp.jeanie_1d_from_cost(cost, gamma=0.1, max_shift=1)
-```
-
-The cost-based functions (`soft_dtw`, `fvm_*`, `jeanie_*_from_cost`) also accept an unbatched cost (no leading `B`).
-
-### Backends and options
-
-- **Backends:** `backend="auto"` (default) uses the CUDA kernels for CUDA tensors and a vectorised PyTorch implementation otherwise (CPU, MPS, ...). Pass `backend="cuda"` or `backend="torch"` to force one.
-- **First use:** the CUDA kernels are compiled on first use (about 1 minute, then cached). This needs `nvcc` with the same CUDA major version as the installed torch build. Without it, torchwarp warns once and falls back to the PyTorch backend.
-- **Autograd:** gradients of any order, forward-mode AD, `torch.func` (`grad`, `vmap`, `jacrev`, `jacfwd`, `hessian`) and `torch.compile` are supported.
-- **Environment variables:** `TORCHWARP_FAST_MATH=1` uses fast float32 `exp`/`log` in the kernels; `TORCHWARP_NO_CUDA=1` always uses the PyTorch backend; `TORCHWARP_VERBOSE=1` prints the kernel build log.
-
-### Run the examples
-
-```bash
-bash examples/download_data.sh                                # ECG5000 + NW-UCLA into examples/data/
-python examples/ecg5000_forecast.py --loss udtw               # euclidean | dtw | sdtw_div | udtw
-python examples/nwucla_fewshot.py --method jeanie             # sdtw | sdtw_div | udtw | fvm | jeanie
-```
-
-Both scripts run seeds 42, 43, 44 by default (`--seeds` to change) and write per-seed metrics and training time to `examples/results/<task>_<method>.json`. `ecg5000_forecast.py --save-ckpt DIR` also saves the trained models. Prefix the commands with `uv run` when using uv.
-
-### Tests
-
-```bash
-pip install pytest scipy   # or: uv sync --extra cu126 (includes the dev group)
-pytest
-```
-
 ## ECG5000
 
 UCR ECG5000 (500 train / 4500 test series, length 140). An MLP (84 → 256 → 56, ReLU) predicts the last 56 steps from the first 84. Adam, batch size 50, 100 epochs (1000 steps). Frame cost: squared Euclidean.
