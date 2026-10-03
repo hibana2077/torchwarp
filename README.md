@@ -22,7 +22,7 @@ The CUDA kernels are compiled on first use and need `nvcc` with the same CUDA ma
 
 Results below: mean ± std over seeds 42, 43, 44; one NVIDIA TITAN RTX; PyTorch 2.14.1+cu126; float32. Train time is the wall-clock time of all training steps.
 
-## ECG5000 forecasting
+## ECG5000
 
 UCR ECG5000 (500 train / 4500 test series, length 140). An MLP (84 → 256 → 56, ReLU) predicts the last 56 steps from the first 84. Adam, batch size 50, 100 epochs (1000 steps). Frame cost: squared Euclidean.
 
@@ -44,7 +44,7 @@ Test metrics: MSE (per time step), DTW, sDTW div. (γ = 1) and uDTW (γ = 1, β 
 
 DTW training uses a plain PyTorch dynamic program; sDTW div. and uDTW use the torchwarp CUDA kernels.
 
-## NW-UCLA cross-view few-shot action recognition
+## NW-UCLA
 
 NW-UCLA Multiview 3D skeletons (10 actions, 20 joints, 3 views). Each sequence is resampled to 32 frames and split into 7 temporal blocks (8 frames, stride 4). Block encoder: MLP 480 → 256 → 64. Query viewpoints are simulated by rotations about the vertical axis. Training: 300 5-way 1-shot episodes on classes {1, 2, 3, 4, 5} (views 1 + 2), cross-entropy over −distance / τ, Adam. Testing: 300 5-way 1-shot episodes on classes {6, 8, 9, 11, 12}, supports from views 1 + 2, 5 queries per class from view 3. Base distance: Euclidean.
 
