@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 
 def reference(name):
-    """Upstream reference package ("udtw" or "jeanie"), or skip the module.
+    """Official package ("udtw" or "jeanie"), or skip the module.
 
     The reference code is downloaded once from github.com/LeiWangR at a
     pinned commit (see torchwarp.testing).
@@ -18,5 +18,5 @@ def reference(name):
     try:
         return load_reference(name)
     except RuntimeError as exc:
-        pytest.skip("reference implementation unavailable: {}".format(exc),
+        pytest.skip("official implementation unavailable: {}".format(exc),
                     allow_module_level=True)

@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "torchwarp"
 version = "0.1.0"
-description = "Fast, differentiable time & viewpoint warping for PyTorch: uDTW and JEANIE with CUDA kernels."
+description = "Unofficial PyTorch/CUDA reimplementation of uDTW and JEANIE."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
@@ -44,8 +44,8 @@ dev = ["pytest>=8", "scipy"]
 [project.urls]
 Homepage = "https://github.com/hibana2077/torchwarp"
 Issues = "https://github.com/hibana2077/torchwarp/issues"
-"uDTW (reference)" = "https://github.com/LeiWangR/uDTW"
-"JEANIE (reference)" = "https://github.com/LeiWangR/JEANIE"
+"uDTW (official)" = "https://github.com/LeiWangR/uDTW"
+"JEANIE (official)" = "https://github.com/LeiWangR/JEANIE"
 
 [tool.uv]
 conflicts = [[{ extra = "cpu" }, { extra = "cu126" }, { extra = "cu128" }]]
@@ -76,7 +76,7 @@ explicit = true
 packages = ["src/torchwarp"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src/torchwarp", "tests", "README.md", "LICENSE", "CITATION.cff"]
+include = ["src/torchwarp", "tests", "README.md", "LICENSE"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

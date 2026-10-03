@@ -11,3 +11,6 @@ dist/
 
 # benchmark datasets (fetch with benchmarks/download_data.sh)
 benchmarks/data/
+
+# experiment outputs
+benchmarks/results/

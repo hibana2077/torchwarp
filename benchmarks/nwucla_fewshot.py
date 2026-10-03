@@ -1,28 +1,24 @@
-"""Cross-view few-shot skeleton action recognition with JEANIE (NW-UCLA).
+"""Cross-view few-shot skeleton action recognition on NW-UCLA.
 
-The JEANIE paper evaluates on NTU-60/120, Kinetics-skeleton and UWA3D
-Multiview II. NTU needs a registration, the UWA3D site is offline and
-Kinetics-skeleton has no 3D/multi-view data. This benchmark therefore uses
-the public NW-UCLA Multiview 3D skeleton dataset (3 Kinect views, 10
-actions, 20 joints) in a protocol that mirrors the paper's FSAR pipeline:
+NW-UCLA Multiview 3D skeletons (10 actions, 20 joints, 3 Kinect views):
+  * 32 resampled frames, temporal blocks of 8 frames with stride 4 (T=7);
+  * query viewpoints simulated by rotations about the vertical axis;
+  * block encoder: MLP (8*20*3 = 480) -> 256 -> 64;
+  * training: 300 5-way 1-shot episodes on classes {1,2,3,4,5} (views 1+2,
+    one query per class), cross-entropy over -distance / temperature;
+  * testing: 300 5-way 1-shot episodes on classes {6,8,9,11,12}, supports
+    from views 1+2, five queries per class from view 3.
 
-  * temporal blocks: 32 resampled frames, blocks of M=8 frames, stride 4
-    (T=7 blocks);
-  * viewpoint simulation of the query: rotations about the vertical axis by
-    {-30,-15,0,15,30} degrees (K=5);
-  * block encoder: MLP 480 -> 256 -> 64;
-  * distance: JEANIE-1D (gamma=0.1, iota=1, Euclidean base distance);
-  * training: 5-way 1-shot episodes on 5 training classes (views 1+2),
-    cross-entropy over -JEANIE distances;
-  * testing: 5-way 1-shot episodes on the 5 held-out classes, supports from
-    views 1+2 and queries from view 3 (cross-view).
-
-Reference (github.com/LeiWangR/JEANIE, one pair per call) and torchwarp
-(batched) runs share data, episodes, initial weights and hyperparameters.
+Distances (Euclidean base distance between block embeddings):
+  * sdtw, sdtw_div: soft-DTW / soft-DTW divergence on the 0-degree query view
+  * udtw:           d_uDTW + beta * Omega (normalize=True) on the 0-degree view;
+                    a head (64 -> 32 -> 1, sigma = 1.5 sigmoid + 0.5) predicts
+                    a sigma per block
+  * fvm:            query-only 1-D Free Viewpoint Matching over the K views
+  * jeanie:         JEANIE-1D over the K views
 
 Usage:
-  python benchmarks/nwucla_jeanie_fewshot.py --impl ref  --device cpu  --seeds 0 1 2 3 4
-  python benchmarks/nwucla_jeanie_fewshot.py --impl fast --device cuda --seeds 0 1 2 3 4
+  python benchmarks/nwucla_fewshot.py --method jeanie
 """
 
 import argparse
@@ -36,21 +32,27 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from torchwarp.testing import load_reference
+import torchwarp
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "benchmarks" / "data" / "nwucla" / "all_sqe"
 
-CONFIG = dict(
-    dataset="NW-UCLA Multiview (all_sqe), 20 joints, 3 views",
+BASE = dict(
     frames=32, block=8, stride=4, angles_deg=[-30, -15, 0, 15, 30],
     train_classes=[1, 2, 3, 4, 5], test_classes=[6, 8, 9, 11, 12],
-    hidden=256, embed=64,
-    gamma=0.1, max_shift=1, temperature=1.0,
+    hidden=256, embed=64, sigma_hidden=32, sigma_a=1.5, sigma_b=0.5,
     way=5, shot=1, train_queries_per_class=1, test_queries_per_class=5,
     train_episodes=300, test_episodes=300,
-    optimizer="Adam", lr=1e-3, dtype="float32",
+    gamma=0.1, max_shift=1, beta=1.0, temperature=1.0, lr=1e-3,
 )
+METHODS = {
+    "sdtw": dict(gamma=0.001),
+    "sdtw_div": dict(gamma=0.001),
+    "udtw": dict(gamma=0.1, beta=3.0, temperature=1.0, lr=3e-4),
+    "fvm": dict(angles_deg=[-60, -30, 0, 30, 60], gamma=0.1, temperature=3.0, lr=3e-4),
+    "jeanie": dict(angles_deg=[-60, -30, 0, 30, 60], gamma=1.0, max_shift=2,
+                   temperature=10.0, lr=1e-3),
+}
 
 
 # ------------------------------------------------------------------- data
@@ -104,26 +106,54 @@ class BlockEncoder(nn.Module):
         return self.net(x)
 
 
-def make_distance(impl, cfg):
-    """All-pairs JEANIE distances: q [nq,K,T,E], s [ns,T,E] -> [nq, ns]."""
-    if impl == "ref":
-        ref = load_reference("jeanie")
+class SigmaHead(nn.Module):
+    """Per-block sigma in [b, a + b] for uDTW."""
 
-        def dist(q, s):
-            rows = [torch.stack([ref.jeanie_1d_from_cost(ref.euclidean_cost(qi, sj),
-                                                         cfg["gamma"], cfg["max_shift"])
-                                 for sj in s]) for qi in q]
-            return torch.stack(rows)
-        return dist
+    def __init__(self, cfg):
+        super().__init__()
+        self.net = nn.Sequential(nn.Linear(cfg["embed"], cfg["sigma_hidden"]), nn.ReLU(),
+                                 nn.Linear(cfg["sigma_hidden"], 1))
+        self.a, self.b = cfg["sigma_a"], cfg["sigma_b"]
 
-    import torchwarp as fast
+    def forward(self, z):
+        return self.a * torch.sigmoid(self.net(z)) + self.b
+
+
+def all_pairs(q, s):
+    """q [nq,...], s [ns,...] -> both [nq*ns,...], query-major."""
+    nq, ns = q.shape[0], s.shape[0]
+    qq = q.unsqueeze(1).expand(nq, ns, *q.shape[1:]).reshape(nq * ns, *q.shape[1:])
+    ss = s.unsqueeze(0).expand(nq, ns, *s.shape[1:]).reshape(nq * ns, *s.shape[1:])
+    return qq, ss
+
+
+def make_distance(method, cfg, sigma_head):
+    """All-pairs distances: q [nq,K,T,E], s [ns,T,E] -> [nq, ns]."""
+    view0 = cfg["angles_deg"].index(0)
+    gamma = cfg["gamma"]
+
+    def sdtw(a, b):                                   # [P,T,E], [P,U,E] -> [P]
+        return torchwarp.soft_dtw(torchwarp.euclidean_cost(a.unsqueeze(1), b)[:, 0], gamma)
+
+    def udtw(a, b):
+        d, pen = torchwarp.udtw_from_features(a, b, sigma_head(a), sigma_head(b),
+                                              beta=cfg["beta"], gamma=gamma)
+        return d + pen
 
     def dist(q, s):
         nq, ns = q.shape[0], s.shape[0]
-        qq = q.unsqueeze(1).expand(nq, ns, *q.shape[1:]).reshape(nq * ns, *q.shape[1:])
-        ss = s.unsqueeze(0).expand(nq, ns, *s.shape[1:]).reshape(nq * ns, *s.shape[1:])
-        d = fast.jeanie_1d_from_features(qq, ss, cfg["gamma"], cfg["max_shift"])
-        return d.view(nq, ns)
+        if method == "jeanie":
+            qq, ss = all_pairs(q, s)
+            return torchwarp.jeanie_1d_from_features(qq, ss, gamma, cfg["max_shift"]).view(nq, ns)
+        if method == "fvm":
+            qq, ss = all_pairs(q, s)
+            return torchwarp.fvm_query_only_1d(torchwarp.euclidean_cost(qq, ss), gamma).view(nq, ns)
+        q = q[:, view0]
+        qq, ss = all_pairs(q, s)
+        if method == "sdtw":
+            return sdtw(qq, ss).view(nq, ns)
+        fn = sdtw if method == "sdtw_div" else udtw
+        return fn(qq, ss).view(nq, ns) - 0.5 * (fn(q, q)[:, None] + fn(s, s)[None, :])
     return dist
 
 
@@ -145,20 +175,24 @@ def sample_episode(rng, pool, classes, cfg, n_query, query_views_allowed, suppor
     return sup, qry, torch.tensor(qlab)
 
 
-def run(impl, device, seed, cfg, seqs):
-    dtype = getattr(torch, cfg["dtype"])
-    rots = rotations(cfg).to(dtype)
-    support_blocks = [blocks(torch.tensor(s, dtype=dtype), cfg) for _, _, s in seqs]
-    query_blocks = [query_views(torch.tensor(s, dtype=dtype), rots, cfg)
+def run(method, cfg, seed, seqs, device):
+    rots = rotations(cfg)
+    support_blocks = [blocks(torch.tensor(s, dtype=torch.float32), cfg) for _, _, s in seqs]
+    query_blocks = [query_views(torch.tensor(s, dtype=torch.float32), rots, cfg)
                     for _, _, s in seqs]
     pool = {}
     for idx, (label, view, _) in enumerate(seqs):
         pool.setdefault(label, []).append((idx, view))
 
     torch.manual_seed(seed)
-    enc = BlockEncoder(support_blocks[0].shape[1], cfg).to(device, dtype)
-    opt = torch.optim.Adam(enc.parameters(), lr=cfg["lr"])
-    dist = make_distance(impl, cfg)
+    enc = BlockEncoder(support_blocks[0].shape[1], cfg).to(device)
+    params = list(enc.parameters())
+    sigma_head = None
+    if method == "udtw":
+        sigma_head = SigmaHead(cfg).to(device)
+        params += list(sigma_head.parameters())
+    dist = make_distance(method, cfg, sigma_head)
+    opt = torch.optim.Adam(params, lr=cfg["lr"])
     rng = np.random.RandomState(seed)
 
     def logits(sup, qry):
@@ -170,7 +204,7 @@ def run(impl, device, seed, cfg, seqs):
         if device == "cuda":
             torch.cuda.synchronize()
 
-    train_time, losses = 0.0, []
+    train_time = 0.0
     for _ in range(cfg["train_episodes"]):
         sup, qry, lab = sample_episode(rng, pool, cfg["train_classes"], cfg,
                                        cfg["train_queries_per_class"], (1, 2), (1, 2))
@@ -182,49 +216,36 @@ def run(impl, device, seed, cfg, seqs):
         opt.step()
         sync()
         train_time += time.perf_counter() - t0
-        losses.append(loss.item())
 
     test_rng = np.random.RandomState(10_000 + seed)
-    correct, total, test_time = 0, 0, 0.0
+    correct, total = 0, 0
     with torch.no_grad():
         for _ in range(cfg["test_episodes"]):
             sup, qry, lab = sample_episode(test_rng, pool, cfg["test_classes"], cfg,
                                            cfg["test_queries_per_class"], (3,), (1, 2))
-            sync()
-            t0 = time.perf_counter()
             pred = logits(sup, qry).argmax(1).cpu()
-            sync()
-            test_time += time.perf_counter() - t0
             correct += int((pred == lab).sum())
             total += len(lab)
-    return dict(seed=seed, accuracy=100.0 * correct / total,
-                final_train_loss=float(np.mean(losses[-20:])),
-                train_time_s=train_time, test_time_s=test_time)
+    return dict(seed=seed, accuracy=100.0 * correct / total, train_time_s=train_time)
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--impl", choices=["ref", "fast"], required=True)
-    ap.add_argument("--device", choices=["cpu", "cuda"], required=True)
-    ap.add_argument("--seeds", type=int, nargs="+", default=[0, 1, 2, 3, 4])
+    ap.add_argument("--method", choices=sorted(METHODS), required=True)
+    ap.add_argument("--seeds", type=int, nargs="+", default=[42, 43, 44])
+    ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     ap.add_argument("--out", default=None)
-    ap.add_argument("--episodes", type=int, default=None, help="smoke tests only")
-    ap.add_argument("--dtype", choices=["float32", "float64"], default="float32")
     args = ap.parse_args()
-    CONFIG["dtype"] = args.dtype
-    if args.episodes is not None:
-        CONFIG["train_episodes"] = CONFIG["test_episodes"] = args.episodes
 
-    seqs = load_dataset(CONFIG)
-    out = Path(args.out or ROOT / "benchmarks" / "results" /
-               "nwucla_{}_{}.json".format(args.impl, args.device))
+    cfg = dict(BASE, **METHODS[args.method])
+    seqs = load_dataset(cfg)
+    out = Path(args.out or ROOT / "benchmarks" / "results" / "nwucla_{}.json".format(args.method))
     out.parent.mkdir(parents=True, exist_ok=True)
     runs = []
     for seed in args.seeds:
-        runs.append(run(args.impl, args.device, seed, CONFIG, seqs))
+        runs.append(run(args.method, cfg, seed, seqs, args.device))
         print(json.dumps(runs[-1]), flush=True)
-        out.write_text(json.dumps(dict(impl=args.impl, device=args.device, config=CONFIG,
-                                       n_sequences=len(seqs), torch=torch.__version__,
+        out.write_text(json.dumps(dict(method=args.method, config=cfg, torch=torch.__version__,
                                        runs=runs), indent=2))
 
 

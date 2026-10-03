@@ -1,6 +1,6 @@
-"""Feature parity with the reference (pure-autograd) implementation.
+"""Feature parity with the official (pure-autograd) implementation.
 
-Everything the reference supports must work, with the same numbers: a
+Everything the official code supports must work, with the same numbers: a
 differentiable accumulator, higher-order gradients (create_graph / MAML),
 forward mode, every torch.func transform, torch.compile and autocast.
 """

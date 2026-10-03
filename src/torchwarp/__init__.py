@@ -1,8 +1,9 @@
-"""torchwarp: fast, differentiable time & viewpoint warping for PyTorch.
+"""torchwarp: unofficial PyTorch/CUDA reimplementation of uDTW and JEANIE.
 
-Implements uncertainty-DTW (uDTW, ECCV 2022) and JEANIE (IJCV 2024) by
-Lei Wang and Piotr Koniusz et al., plus soft-DTW and Free Viewpoint
-Matching, with CUDA/HIP kernels and a portable PyTorch backend.
+uncertainty-DTW (uDTW, ECCV 2022) and JEANIE (IJCV 2024) were proposed by
+Lei Wang, Piotr Koniusz et al. The official code is at github.com/LeiWangR.
+This package also provides soft-DTW and Free Viewpoint Matching, with
+CUDA/HIP kernels and a portable PyTorch backend.
 """
 
 from .jeanie import (

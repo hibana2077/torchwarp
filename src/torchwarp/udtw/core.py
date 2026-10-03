@@ -1,6 +1,6 @@
 """Fast uncertainty-DTW.
 
-Same mathematics as the reference implementation (github.com/LeiWangR/uDTW):
+Implements the uDTW formulation of Wang & Koniusz (ECCV 2022):
   * uncertainty-weighted path cost (Eq. 2 / Eq. 16)
   * uncertainty penalty under the same soft path distribution (Eq. 3)
   * additive pairwise variance (Eq. 8)
@@ -52,7 +52,7 @@ def squared_euclidean(X, Y, method="gemm"):
     """Pairwise squared distances [B,N,M] between X [B,N,D] and Y [B,M,D].
 
     ``"gemm"`` uses ||x||^2 + ||y||^2 - 2 x.y (one batched matmul, low
-    memory); ``"diff"`` materialises x - y like the reference code.
+    memory); ``"diff"`` materialises x - y.
     """
     if method == "diff":
         return (X.unsqueeze(2) - Y.unsqueeze(1)).pow(2).sum(dim=3)
@@ -168,18 +168,18 @@ def udtw_from_features(X, Y, Sigma_X, Sigma_Y, beta=1.0, gamma=1.0, bandwidth=No
 
 
 class uDTW(nn.Module):
-    """Uncertainty-DTW module, drop-in replacement for ``udtw.uDTW``.
+    """Uncertainty-DTW module.
 
     Args:
         use_cuda: Kept for backward compatibility; the device of the inputs
             decides where the computation runs.
         gamma: Soft-DTW relaxation temperature.
         normalize: If True, return d(X,Y) - 0.5[d(X,X)+d(Y,Y)] for both the
-            distance and the penalty, exactly like the reference code.
+            distance and the penalty.
         bandwidth: Optional Sakoe-Chiba bandwidth. None or 0 disables pruning.
         backend: "auto", "cuda" or "torch".
         distance: "gemm" (default: cost built inside the fused op) or "diff"
-            (reference formulation, materialised [B,N,M] matrices).
+            (materialised [B,N,M] matrices).
 
     Forward:
         X, Y: [B,N,D], [B,M,D]

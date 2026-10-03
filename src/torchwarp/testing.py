@@ -1,11 +1,10 @@
-"""Reference implementations used as a correctness oracle.
+"""Official implementations, used by the test suite as a correctness check.
 
-The original pure-PyTorch implementations by the authors of uDTW and JEANIE
-live at github.com/LeiWangR/uDTW and github.com/LeiWangR/JEANIE. They are
-not redistributed with torchwarp. ``load_reference`` downloads them at a
-pinned commit into ``~/.cache/torchwarp/reference`` (override with
-``TORCHWARP_REFERENCE_DIR``) and imports them, so tests and benchmarks can
-compare against the exact upstream code.
+The official uDTW and JEANIE code is at github.com/LeiWangR/uDTW and
+github.com/LeiWangR/JEANIE and is not redistributed with torchwarp.
+``load_reference`` downloads it at a pinned commit into
+``~/.cache/torchwarp/reference`` (override with ``TORCHWARP_REFERENCE_DIR``)
+and imports it.
 """
 
 import importlib
@@ -35,7 +34,7 @@ def _cache_root():
 
 
 def load_reference(name, timeout=30):
-    """Return the upstream reference package ``"udtw"`` or ``"jeanie"``.
+    """Return the official package ``"udtw"`` or ``"jeanie"`` (downloaded once).
 
     Raises RuntimeError if it is not cached and cannot be downloaded.
     """

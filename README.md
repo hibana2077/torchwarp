@@ -1,169 +1,83 @@
 # torchwarp
 
-**Fast, differentiable time & viewpoint warping for PyTorch — uDTW and JEANIE with CUDA kernels.**
+Unofficial PyTorch/CUDA reimplementation of uncertainty-DTW (uDTW) [1] and JEANIE [2], with soft-DTW and Free Viewpoint Matching (FVM). The official code is at [LeiWangR/uDTW](https://github.com/LeiWangR/uDTW) and [LeiWangR/JEANIE](https://github.com/LeiWangR/JEANIE).
 
-[![tests](https://github.com/hibana2077/torchwarp/actions/workflows/tests.yml/badge.svg)](https://github.com/hibana2077/torchwarp/actions/workflows/tests.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-![Python](https://img.shields.io/badge/python-3.10%2B-blue)
-![PyTorch](https://img.shields.io/badge/PyTorch-2.5%2B-ee4c2c)
-
-torchwarp warps, aligns and matches sequences. It is a drop-in, GPU-accelerated
-implementation of two soft-DTW-family distances by Lei Wang, Piotr Koniusz et al.:
-
-| method | what it aligns | paper |
-| --- | --- | --- |
-| **uDTW** — uncertainty-DTW | time, with per-frame uncertainty Σ | Wang & Koniusz, *ECCV 2022* |
-| **JEANIE** | time **and** camera viewpoint, jointly | Wang et al., *IJCV 2024* |
-
-The package also includes soft-DTW and Free Viewpoint Matching (FVM).
-
-- **Fast:** 30–700× faster than the reference uDTW and up to 19,000× faster
-  than the reference JEANIE ([numbers](#performance)).
-- **Exact:** it matches the reference implementations to 1e-10 on values and
-  gradients. On real-data training runs in float64, the two agree to 1e-11.
-- **Complete:**
-  - gradients of any order (MAML / `create_graph`)
-  - forward mode
-  - every `torch.func` transform (`grad`, `jacrev`, `jacfwd`, `hessian`, `vmap`)
-  - `torch.compile(fullgraph=True)`
-  - autocast
-  - a differentiable JEANIE accumulator
-- **Portable:** runs on CUDA through JIT-compiled kernels and on ROCm through
-  hipify (untested on AMD hardware). On CPU, MPS or any other device it uses
-  a vectorised PyTorch backend.
-
-## Install
+## Usage
 
 ```bash
 git clone https://github.com/hibana2077/torchwarp && cd torchwarp
-uv sync --extra cu126            # or --extra cu128 / --extra cpu
+uv sync --extra cu126                      # or --extra cu128 / --extra cpu; pip: pip install -r requirements.txt -e .
+bash benchmarks/download_data.sh           # ECG5000 + NW-UCLA
+uv run python benchmarks/ecg5000_forecast.py --loss udtw         # euclidean | dtw | sdtw_div | udtw
+uv run python benchmarks/nwucla_fewshot.py --method jeanie       # sdtw | sdtw_div | udtw | fvm | jeanie
 ```
-
-With pip: `pip install git+https://github.com/hibana2077/torchwarp`.
-
-The CUDA kernels are compiled on first use, which takes about 1 minute and is
-then cached. This needs `nvcc` with the same major CUDA version as your torch
-build. Without a working `nvcc`, torchwarp warns once and falls back to the
-PyTorch backend.
-
-## Quickstart
 
 ```python
-import torch, torchwarp
-
-# uDTW: sequences [B,N,D] / [B,M,D], per-frame sigma [B,N,1] / [B,M,1] (e.g. from a SigmaNet)
-udtw = torchwarp.uDTW(gamma=0.1)
-distance, penalty = udtw(X, Y, sigma_x, sigma_y, beta=1.0)
-loss = (distance + penalty).mean()              # d_uDTW + beta * Omega
-
-# JEANIE: query [B,K,T,D] (K simulated viewpoints), support [B,U,D]
-jeanie = torchwarp.JEANIE(gamma=0.1, max_shift=1)   # max_shift=(1,1) for [B,K1,K2,T,D]
-d = jeanie(query, support)                          # [B]
-d, R = jeanie(query, support, return_accumulator=True)
+import torchwarp
+d, omega = torchwarp.uDTW(gamma=1.0, normalize=True)(X, Y, sigma_x, sigma_y, beta=1.0)  # [B,N,D], [B,M,D], [B,N,1], [B,M,1]
+d = torchwarp.JEANIE(gamma=0.1, max_shift=1)(query, support)                          # [B,K,T,D], [B,U,D]
 ```
 
-A runnable version is in [`examples/quickstart.py`](examples/quickstart.py).
+The CUDA kernels are compiled on first use and need `nvcc` with the same CUDA major version as the installed torch.
 
-## API
+Results below: mean ± std over seeds 42, 43, 44; one NVIDIA TITAN RTX; PyTorch 2.14.1+cu126; float32. Train time is the wall-clock time of all training steps.
 
-| function | input → output |
+## ECG5000 forecasting
+
+UCR ECG5000 (500 train / 4500 test series, length 140). An MLP (84 → 256 → 56, ReLU) predicts the last 56 steps from the first 84. Adam, batch size 50, 100 epochs (1000 steps). Frame cost: squared Euclidean.
+
+| training loss | hyperparameters |
 | --- | --- |
-| `uDTW(gamma, normalize, bandwidth)` | `(X, Y, Σx, Σy, beta)` → `(distance, penalty)`, both `[B]`. Drop-in for the reference module. |
-| `udtw_from_features` / `udtw_from_matrices` | Fused path from features / DP on custom cost and penalty matrices (e.g. Eq. 9). |
-| `JEANIE(gamma, max_shift, metric)` | `(query, support)` → `[B]` |
-| `jeanie_{1d,2d}_from_features` | Same as `JEANIE`, from features. The cost tensor is never materialised. |
-| `jeanie_{1d,2d}_from_cost`, `jeanie_dp` | DP on a cost tensor `[(B,) K(,K2), T, U]` |
-| `soft_dtw`, `fvm_*` | soft-DTW `[(B,) T, U]`; Free Viewpoint Matching (Eq. 13) |
-| `euclidean_cost`, `squared_euclidean_cost`, `rbf_cost` | Base distances `[..., K, T, D] × [..., U, D]` |
+| Euclidean | lr 1e-3 |
+| DTW | lr 1e-3 |
+| sDTW div. | γ = 0.001, lr 1e-3 |
+| uDTW | γ = 1, β = 1, normalize = True, lr 3e-3; SigmaNet 56 → 64 → 56, σ = 2.0·sigmoid(·) + 0.1 |
 
-Every function accepts an optional leading batch dimension, and
-`backend="auto" | "cuda" | "torch"`. Set `TORCHWARP_FAST_MATH=1` for faster
-float32 `exp`/`log` (10–18% on the DP).
+Test metrics: MSE (per time step), DTW, sDTW div. (γ = 1) and uDTW (γ = 1, β = 1, normalize = True), all in float64. σ for the uDTW metric comes from one fixed SigmaNet (uDTW loss, σ = 1.5·sigmoid(·) + 0.5, lr 1e-3, seed 100), shared by all models.
 
-## Performance
+| training loss | MSE ↓ | DTW ↓ | sDTW div. ↓ | uDTW ↓ | train time (s) |
+| --- | --- | --- | --- | --- | --- |
+| Euclidean | 0.2161 ± 0.0065 | 5.5127 ± 0.3189 | 7.8376 ± 0.3005 | 2.5342 ± 0.0911 | 0.77 ± 0.06 |
+| DTW | 0.7299 ± 0.1767 | 5.3317 ± 0.4190 | 19.0465 ± 3.5771 | 9.3703 ± 2.7353 | 53.59 ± 0.77 |
+| sDTW div. | 0.7248 ± 0.1845 | 5.3684 ± 0.5537 | 19.0471 ± 3.7483 | 9.2619 ± 2.7557 | 2.02 ± 0.12 |
+| uDTW | 0.2698 ± 0.0138 | 6.8878 ± 0.4812 | 8.4908 ± 0.4687 | 2.7986 ± 0.1459 | 4.36 ± 0.60 |
 
-Measured on a TITAN RTX with float32, forward + backward. The reference runs on CPU, its fastest device.
+DTW training uses a plain PyTorch dynamic program; sDTW div. and uDTW use the torchwarp CUDA kernels.
 
-| case | reference | torchwarp (CUDA) | speed-up |
-| --- | --- | --- | --- |
-| uDTW, B=8, N=M=50 | 626 ms | 0.89 ms | **703×** |
-| uDTW, B=8, N=M=25, normalize | 438 ms | 2.40 ms | **182×** |
-| JEANIE-1D, B=8, K=5, T=U=20 | 2,346 ms | 0.68 ms | **3,472×** |
-| JEANIE-2D, B=8, 5×5 views, T=U=20 | 15,675 ms | 0.82 ms | **19,061×** |
-| uDTW training, ECG5000, 1000 steps | 878 s | 2.4 s | **366×** |
-| JEANIE few-shot training, NW-UCLA, 300 episodes | 275 s | 0.66 s | **416×** |
+## NW-UCLA cross-view few-shot action recognition
 
-At small sizes, run time is dominated by Python overhead (about 0.8 ms per
-call). `torch.compile(..., mode="reduce-overhead")` brings this down to about
-0.4 ms. To reproduce the table, run `benchmarks/speed_{udtw,jeanie}.py`.
+NW-UCLA Multiview 3D skeletons (10 actions, 20 joints, 3 views). Each sequence is resampled to 32 frames and split into 7 temporal blocks (8 frames, stride 4). Block encoder: MLP 480 → 256 → 64. Query viewpoints are simulated by rotations about the vertical axis. Training: 300 5-way 1-shot episodes on classes {1, 2, 3, 4, 5} (views 1 + 2), cross-entropy over −distance / τ, Adam. Testing: 300 5-way 1-shot episodes on classes {6, 8, 9, 11, 12}, supports from views 1 + 2, 5 queries per class from view 3. Base distance: Euclidean.
 
-## Correctness
+| method | viewpoints (deg) | hyperparameters |
+| --- | --- | --- |
+| sDTW | 0 | γ = 0.001, τ = 1, lr 1e-3 |
+| sDTW div. | 0 | γ = 0.001, τ = 1, lr 1e-3 |
+| uDTW | 0 | γ = 0.1, β = 3, normalize = True, τ = 1, lr 3e-4; σ head 64 → 32 → 1, σ = 1.5·sigmoid(·) + 0.5 |
+| FVM | −60, −30, 0, 30, 60 | γ = 0.1, τ = 3, lr 3e-4 |
+| JEANIE | −60, −30, 0, 30, 60 | γ = 1, ι = 2, τ = 10, lr 1e-3 |
 
-- **Unit tests.** `pytest` (459 tests) compares every function, backend,
-  gradient, higher-order derivative and `torch.func` / `torch.compile` path
-  against the original code from [LeiWangR/uDTW](https://github.com/LeiWangR/uDTW)
-  and [LeiWangR/JEANIE](https://github.com/LeiWangR/JEANIE). That code is
-  downloaded at a pinned commit; it is not redistributed with torchwarp.
-- **Real-data training.** Reference and torchwarp were trained with the same
-  seeds, data and hyperparameters on two tasks. Full details are in
-  [`benchmarks/RESULTS.md`](benchmarks/RESULTS.md).
-  - **uDTW**, ECG5000 forecasting (as in the uDTW paper): test MSE is 0.4271
-    for the reference and 0.4270 for torchwarp.
-  - **JEANIE**, NW-UCLA cross-view 5-way 1-shot: accuracy is 35.3% for the
-    reference and 35.6% for torchwarp.
-  - **float64:** the two implementations agree to ≤1e-11.
+| method | accuracy (%) ↑ | train time (s) |
+| --- | --- | --- |
+| sDTW | 24.41 ± 2.47 | 0.89 ± 0.07 |
+| sDTW div. | 24.60 ± 3.56 | 1.65 ± 0.13 |
+| uDTW | 24.06 ± 8.43 | 2.04 ± 0.04 |
+| FVM | 41.15 ± 0.43 | 0.92 ± 0.15 |
+| JEANIE | 37.08 ± 2.37 | 0.67 ± 0.11 |
 
-## How it works
+## References
 
-- **One thread block per sequence pair** sweeps anti-diagonals. Only three
-  diagonals are kept in shared memory, which keeps occupancy high.
-- **Diagonal-major memory layout** (viewpoints innermost for JEANIE) with
-  prefetch makes every global access coalesced.
-- **Fused cost construction.** One GEMM computes ⟨x, y⟩; the uncertainty
-  weighting (`‖x−y‖²/Σ`, `β log Σ`) or the Euclidean cost is built in
-  registers.
-- **Analytic backward kernels**, including the adjoint of uDTW's
-  soft-selected penalty Ω and dL/dR seeds for JEANIE's accumulator.
-- **Exact higher-order derivatives.** The backward is itself an op whose
-  derivative uses an autograd-native implementation. Training stays on the
-  fast path; any-order and forward-mode derivatives are still exact.
+[1] L. Wang and P. Koniusz. Uncertainty-DTW for Time Series and Sequences. ECCV 2022. Code: <https://github.com/LeiWangR/uDTW>
 
-## Development
-
-```bash
-uv sync --extra cu126
-uv run pytest                                     # tests (CUDA tests auto-skip without a GPU)
-bash benchmarks/download_data.sh                  # ECG5000 + NW-UCLA for the real-data benchmarks
-uv run python benchmarks/speed_udtw.py            # speed tables
-uv run python benchmarks/ecg5000_forecast.py --impl fast --device cuda
-```
-
-## Citation
-
-uDTW and JEANIE were introduced in the papers below; please cite them if you use torchwarp.
+[2] L. Wang, J. Liu, L. Zheng, T. Gedeon and P. Koniusz. Meet JEANIE: a Similarity Measure for 3D Skeleton Sequences via Temporal-Viewpoint Alignment. IJCV 132(9):4091–4122, 2024. Code: <https://github.com/LeiWangR/JEANIE>
 
 ```bibtex
 @inproceedings{wang2022uncertainty,
-  title     = {Uncertainty-DTW for Time Series and Sequences},
-  author    = {Wang, Lei and Koniusz, Piotr},
-  booktitle = {European Conference on Computer Vision (ECCV)},
-  pages     = {176--195},
-  year      = {2022},
-  publisher = {Springer}
-}
-
+  title={Uncertainty-DTW for Time Series and Sequences}, author={Wang, Lei and Koniusz, Piotr},
+  booktitle={European Conference on Computer Vision (ECCV)}, pages={176--195}, year={2022}}
 @article{wang2024meet,
-  title   = {Meet JEANIE: a Similarity Measure for 3D Skeleton Sequences via Temporal-Viewpoint Alignment},
-  author  = {Wang, Lei and Liu, Jun and Zheng, Liang and Gedeon, Tom and Koniusz, Piotr},
-  journal = {International Journal of Computer Vision},
-  volume  = {132},
-  number  = {9},
-  pages   = {4091--4122},
-  year    = {2024},
-  publisher = {Springer}
-}
+  title={Meet JEANIE: a Similarity Measure for 3D Skeleton Sequences via Temporal-Viewpoint Alignment},
+  author={Wang, Lei and Liu, Jun and Zheng, Liang and Gedeon, Tom and Koniusz, Piotr},
+  journal={International Journal of Computer Vision}, volume={132}, number={9}, pages={4091--4122}, year={2024}}
 ```
 
-## License
-
-[MIT](LICENSE). The uDTW and JEANIE methods are by their authors (see Citation).
+MIT License.

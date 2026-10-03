@@ -1,4 +1,4 @@
-"""torchwarp JEANIE / soft-DTW / FVM vs the upstream reference (float64)."""
+"""torchwarp JEANIE / soft-DTW / FVM vs the official implementation (float64)."""
 
 import pytest
 import torch

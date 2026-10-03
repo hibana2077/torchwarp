@@ -1,4 +1,4 @@
-"""Public API checks that do not need the reference implementation."""
+"""Public API checks that do not need the official implementation."""
 
 import pytest
 import torch

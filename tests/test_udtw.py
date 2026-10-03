@@ -1,4 +1,4 @@
-"""torchwarp uDTW vs the upstream reference implementation (float64)."""
+"""torchwarp uDTW vs the official implementation (float64)."""
 
 import pytest
 import torch

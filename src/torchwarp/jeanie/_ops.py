@@ -11,7 +11,7 @@ Two layers:
    torch.func transform (grad, vjp, jvp, jacrev, jacfwd, hessian, vmap and
    any nesting) and ordinary autograd (create_graph=True) work.
 
-The accumulator R is a differentiable output, like in the reference.
+The accumulator R is a differentiable output.
 First-order reverse mode runs the analytic backward kernel (with dL/dR as an
 extra seed). Forward mode, and differentiating *through* a backward pass
 (second and higher orders), use the autograd-native implementation in

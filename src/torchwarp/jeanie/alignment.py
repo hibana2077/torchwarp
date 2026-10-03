@@ -1,7 +1,7 @@
 """Fast JEANIE temporal-viewpoint alignment and soft-DTW.
 
-Same mathematics as the reference implementation (github.com/LeiWangR/JEANIE;
-Algorithm 1 of the paper and its two-axis extension). Every entry point accepts either a
+Implements JEANIE (Wang et al., IJCV 2024; Algorithm 1 and its two-axis
+extension). Every entry point accepts either a
 single cost tensor or a batch with one extra leading dimension. The dynamic
 program runs as a fused CUDA/HIP kernel or as a vectorised anti-diagonal
 PyTorch loop, wrapped as PyTorch custom ops (see ``_ops``): analytic
@@ -45,7 +45,7 @@ def jeanie_dp(cost, gamma=0.1, max_shift_1=1, max_shift_2=1, backend="auto",
     Returns:
         (distance [B], accumulator [B, K1, K2, T, U] or None). The
         accumulator is only materialised when ``return_accumulator`` is set;
-        it is differentiable, like in the reference implementation.
+        it is differentiable.
     """
     if cost.ndim != 5:
         raise ValueError("cost must have shape [B, K1, K2, T, U]")

@@ -1,22 +1,19 @@
-"""ECG5000 forecasting benchmark (uDTW paper, Sec. 4.3 / Table 2 setup).
+"""ECG5000 forecasting (UCR ECG5000, 500 train / 4500 test series of length 140).
 
-Given the first 60% of each UCR ECG5000 series (84 steps), an MLP predicts
-the remaining 40% (56 steps). It is trained with the uDTW loss
-d_uDTW + beta * Omega, with Sigma produced by a SigmaNet (Eq. 8). The
-reference implementation (github.com/LeiWangR/uDTW) and torchwarp are
-trained with the same data, initial weights, batch order and
-hyperparameters. Only the uDTW module differs.
+An MLP (84 -> 256 -> 56) predicts the last 40% of each series from the first
+60%. Training losses (squared-Euclidean frame cost):
+  * euclidean: sum_t (pred_t - y_t)^2
+  * dtw:       hard DTW (plain PyTorch dynamic program)
+  * sdtw_div:  soft-DTW divergence sdtw(x,y) - [sdtw(x,x) + sdtw(y,y)] / 2
+  * udtw:      d_uDTW + beta * Omega (normalize=True), sigma from a SigmaNet
 
-Test metrics (lower is better) are computed by one shared float64 evaluator,
-independent of the implementation used for training:
-  * MSE
-  * DTW: exact hard DTW with squared-Euclidean cost
-  * sDTW div.: soft-DTW divergence with gamma=1, computed with the
-    reference uDTW at sigma=1 (variance 1, zero penalty), which equals soft-DTW.
+Test metrics (float64, lower is better): MSE, DTW, sDTW div. (gamma=1) and
+uDTW (gamma=1, beta=1, normalize=True). The uDTW metric takes sigma from one
+fixed evaluation SigmaNet (a uDTW run with the base configuration and seed
+EVAL_SEED), shared by every model.
 
 Usage:
-  python benchmarks/ecg5000_forecast.py --impl ref  --device cpu  --seeds 0 1 2 3 4
-  python benchmarks/ecg5000_forecast.py --impl fast --device cuda --seeds 0 1 2 3 4
+  python benchmarks/ecg5000_forecast.py --loss udtw
 """
 
 import argparse
@@ -27,25 +24,32 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
-from torchwarp.testing import load_reference
+from torchwarp import soft_dtw, uDTW
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "benchmarks" / "data"
+RESULTS = ROOT / "benchmarks" / "results"
 
-CONFIG = dict(
-    dataset="UCR ECG5000 (500 train / 4500 test, length 140)",
-    input_len=84, output_len=56,
-    hidden=256, sigma_hidden=64, sigma_a=1.5, sigma_b=0.5,
-    gamma=1.0, beta=1.0, normalize=False,
-    optimizer="Adam", lr=1e-3, batch_size=50, epochs=100,
-    dtype="float32",
+BASE = dict(
+    input_len=84, output_len=56, hidden=256,
+    sigma_hidden=64, sigma_a=1.5, sigma_b=0.5,   # sigma = a * sigmoid(.) + b
+    gamma=1.0, beta=1.0, normalize=True,
+    lr=1e-3, batch_size=50, epochs=100,
 )
+LOSSES = {
+    "euclidean": {},
+    "dtw": {},
+    "sdtw_div": dict(gamma=0.001),
+    "udtw": dict(gamma=1.0, beta=1.0, sigma_a=2.0, sigma_b=0.1, lr=3e-3),
+}
+EVAL_SEED = 100
 
 
-def load_split(name, dtype=torch.float32):
+def load_split(name):
     arr = np.loadtxt(DATA / "ECG5000_{}.txt".format(name))
-    return torch.tensor(arr[:, 1:], dtype=dtype)  # drop the class label
+    return torch.tensor(arr[:, 1:], dtype=torch.float32)  # drop the class label
 
 
 class Forecaster(nn.Module):
@@ -72,25 +76,61 @@ class SigmaNet(nn.Module):
         return self.a * torch.sigmoid(self.net(z)) + self.b
 
 
-def make_udtw(impl, cfg):
-    if impl == "ref":
-        uDTW = load_reference("udtw").uDTW
-    else:
-        from torchwarp import uDTW
-    return uDTW(gamma=cfg["gamma"], normalize=cfg["normalize"])
+def hard_dtw_loss(a, b):
+    """Hard DTW, squared-Euclidean cost, differentiable (sub-gradient of min).
+
+    a [B,N], b [B,M] -> [B]. Anti-diagonal sweep: diagonal d holds R[i, d-i]
+    for i = 0..N of the (N+1)x(M+1) accumulated-cost table.
+    """
+    B, N = a.shape
+    M = b.shape[1]
+    inf = torch.tensor(float("inf"), dtype=a.dtype, device=a.device)
+    C = F.pad((a.unsqueeze(2) - b.unsqueeze(1)) ** 2, (1, 1, 1, 0), value=float("inf"))
+    i = torch.arange(N + 1, device=a.device)                 # C row i-1 <-> padded row i
+
+    def shift(v):                                            # v[i] -> v[i-1], inf at i=0
+        return torch.cat([inf.expand(B, 1), v[:, :-1]], 1)
+
+    prev2 = torch.full((B, N + 1), float("inf"), dtype=a.dtype, device=a.device)
+    prev1 = prev2.clone()
+    prev1[:, 0] = 0                                          # d = 0: R[0,0] = 0
+    for d in range(1, N + M + 1):
+        j = (d - i).clamp(0, M + 1)                          # padded column index
+        cd = C[:, i, j]                                      # C[i-1, j-1], inf off-grid
+        cur = cd + torch.minimum(torch.minimum(shift(prev1), prev1), shift(prev2))
+        prev2, prev1 = prev1, cur
+    return prev1[:, N]
 
 
-def train_one(impl, device, seed, cfg, train):
+def make_loss(name, cfg):
+    """loss(pred, y, sigma) -> scalar, averaged over the batch."""
+    if name == "euclidean":
+        return lambda pred, y, sigma: ((pred - y) ** 2).sum(1).mean()
+    if name == "dtw":
+        return lambda pred, y, sigma: hard_dtw_loss(pred, y).mean()
+    if name == "sdtw_div":
+        def sdtw(a, b):
+            return soft_dtw((a.unsqueeze(2) - b.unsqueeze(1)) ** 2, cfg["gamma"])
+        return lambda pred, y, sigma: (sdtw(pred, y) - 0.5 * (sdtw(pred, pred) + sdtw(y, y))).mean()
+    crit = uDTW(gamma=cfg["gamma"], normalize=cfg["normalize"])
+
+    def loss(pred, y, sigma):
+        d, p = crit(pred.unsqueeze(-1), y.unsqueeze(-1),
+                    sigma(pred).unsqueeze(-1), sigma(y).unsqueeze(-1), beta=cfg["beta"])
+        return (d + p).mean()
+    return loss
+
+
+def train_one(name, cfg, seed, train, device):
     torch.manual_seed(seed)
-    f, sigma = Forecaster(cfg), SigmaNet(cfg)            # identical init across runs
-    dtype = getattr(torch, cfg["dtype"])
-    f, sigma = f.to(device, dtype), sigma.to(device, dtype)
-    crit = make_udtw(impl, cfg)
-    opt = torch.optim.Adam(list(f.parameters()) + list(sigma.parameters()), lr=cfg["lr"])
+    f, sigma = Forecaster(cfg).to(device), SigmaNet(cfg).to(device)
+    crit = make_loss(name, cfg)
+    params = list(f.parameters()) + (list(sigma.parameters()) if name == "udtw" else [])
+    opt = torch.optim.Adam(params, lr=cfg["lr"])
     x_all, y_all = train[:, :cfg["input_len"]], train[:, cfg["input_len"]:]
     gen = torch.Generator().manual_seed(seed)
 
-    step_time, losses = 0.0, []
+    step_time = 0.0
     for _ in range(cfg["epochs"]):
         perm = torch.randperm(len(train), generator=gen)
         for k in range(0, len(train), cfg["batch_size"]):
@@ -99,24 +139,20 @@ def train_one(impl, device, seed, cfg, train):
             if device == "cuda":
                 torch.cuda.synchronize()
             t0 = time.perf_counter()
-            pred = f(x)
-            d, p = crit(pred.unsqueeze(-1), y.unsqueeze(-1),
-                        sigma(pred).unsqueeze(-1), sigma(y).unsqueeze(-1), beta=cfg["beta"])
-            loss = (d + p).mean()
+            loss = crit(f(x), y, sigma)
             opt.zero_grad(set_to_none=True)
             loss.backward()
             opt.step()
             if device == "cuda":
                 torch.cuda.synchronize()
             step_time += time.perf_counter() - t0
-            losses.append(loss.item())
-    return f.cpu(), step_time, losses
+    return f.cpu(), sigma.cpu(), step_time
 
 
-# ----------------------------------------------------------- shared evaluator
+# ------------------------------------------------------------------ evaluation
 
 def hard_dtw(a, b):
-    """Exact DTW, squared-Euclidean cost, batched over the first dim (float64)."""
+    """Hard DTW, squared-Euclidean cost, batched over the first dim."""
     B, N = a.shape
     M = b.shape[1]
     C = (a.unsqueeze(2) - b.unsqueeze(1)) ** 2
@@ -129,51 +165,65 @@ def hard_dtw(a, b):
     return R[:, N, M]
 
 
-def evaluate(f, test, cfg):
-    RefUDTW = load_reference("udtw").uDTW
+def eval_sigmanet(train, device):
+    """The fixed SigmaNet of the uDTW test metric (trained once, then cached)."""
+    path = RESULTS / "ecg5000_eval_sigmanet_seed{}.pt".format(EVAL_SEED)
+    sigma = SigmaNet(BASE)
+    if path.exists():
+        sigma.load_state_dict(torch.load(path))
+    else:
+        _, sigma, _ = train_one("udtw", BASE, EVAL_SEED, train, device)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        torch.save(sigma.state_dict(), path)
+    return sigma.double().eval()
 
+
+def evaluate(f, sigma_eval, test, cfg):
+    metric = uDTW(gamma=1.0, normalize=True, backend="torch")
     x = test[:, :cfg["input_len"]].double()
     y = test[:, cfg["input_len"]:].double()
     with torch.no_grad():
         pred = f.double()(x)
-        one = torch.ones(len(y), y.shape[1], 1, dtype=torch.float64)
-        sdtw_div, _ = RefUDTW(gamma=1.0, normalize=True)(
-            pred.unsqueeze(-1), y.unsqueeze(-1), one, one, beta=0.0)
+        p3, y3 = pred.unsqueeze(-1), y.unsqueeze(-1)
+        one = torch.ones_like(y3)
+        sdtw_div, _ = metric(p3, y3, one, one, beta=0.0)      # sigma = 1: soft-DTW
+        d, pen = metric(p3, y3, sigma_eval(pred).unsqueeze(-1), sigma_eval(y).unsqueeze(-1),
+                        beta=1.0)
         return dict(
             mse=float(((pred - y) ** 2).mean()),
             dtw=float(hard_dtw(pred, y).mean()),
             sdtw_div=float(sdtw_div.mean()),
+            udtw=float((d + pen).mean()),
         )
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--impl", choices=["ref", "fast"], required=True)
-    ap.add_argument("--device", choices=["cpu", "cuda"], required=True)
-    ap.add_argument("--seeds", type=int, nargs="+", default=[0, 1, 2, 3, 4])
+    ap.add_argument("--loss", choices=sorted(LOSSES), required=True)
+    ap.add_argument("--seeds", type=int, nargs="+", default=[42, 43, 44])
+    ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     ap.add_argument("--out", default=None)
-    ap.add_argument("--epochs", type=int, default=None, help="smoke tests only")
-    ap.add_argument("--dtype", choices=["float32", "float64"], default="float32")
+    ap.add_argument("--save-ckpt", default=None, metavar="DIR")
     args = ap.parse_args()
 
     torch.backends.cudnn.deterministic = True
-    if args.epochs is not None:
-        CONFIG["epochs"] = args.epochs
-    CONFIG["dtype"] = args.dtype
-    train = load_split("TRAIN", getattr(torch, args.dtype))
-    test = load_split("TEST", getattr(torch, args.dtype))
-    out = Path(args.out or ROOT / "benchmarks" / "results" /
-               "ecg5000_{}_{}.json".format(args.impl, args.device))
+    cfg = dict(BASE, **LOSSES[args.loss])
+    train, test = load_split("TRAIN"), load_split("TEST")
+    sigma_eval = eval_sigmanet(train, args.device)
+    out = Path(args.out or RESULTS / "ecg5000_{}.json".format(args.loss))
     out.parent.mkdir(parents=True, exist_ok=True)
     runs = []
     for seed in args.seeds:
-        f, t, losses = train_one(args.impl, args.device, seed, CONFIG, train)
-        metrics = evaluate(f, test, CONFIG)
-        runs.append(dict(seed=seed, train_time_s=t, final_train_loss=float(np.mean(losses[-10:])),
-                         **metrics))
+        f, sigma, t = train_one(args.loss, cfg, seed, train, args.device)
+        if args.save_ckpt:
+            ckpt = Path(args.save_ckpt)
+            ckpt.mkdir(parents=True, exist_ok=True)
+            torch.save(dict(forecaster=f.state_dict(), sigmanet=sigma.state_dict(), config=cfg),
+                       ckpt / "ecg5000_{}_seed{}.pt".format(args.loss, seed))
+        runs.append(dict(seed=seed, train_time_s=t, **evaluate(f, sigma_eval, test, cfg)))
         print(json.dumps(runs[-1]), flush=True)
-        out.write_text(json.dumps(dict(impl=args.impl, device=args.device, config=CONFIG,
-                                       torch=torch.__version__, runs=runs), indent=2))
+        out.write_text(json.dumps(dict(loss=args.loss, config=cfg, torch=torch.__version__,
+                                       runs=runs), indent=2))
 
 
 if __name__ == "__main__":
