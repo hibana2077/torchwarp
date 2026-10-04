@@ -96,64 +96,87 @@ dist_2d = jeanie_2d(query_2d, support)
 ### Visualization
 
 `torchwarp.plot` draws the path figures of the uDTW and JEANIE papers.
-It needs matplotlib: `pip install -e ".[vis]"` (or
-`uv sync --extra cu126 --extra vis`).
+
+Install the visualization dependencies with:
+
+```bash
+pip install -e ".[vis]"
+# or
+uv sync --extra cu126 --extra vis
+```
+
+#### uDTW
+
+Paths of sDTW and uDTW for two values of γ, and the uncertainty Σ on
+the path (uDTW paper, Fig. 2):
 
 ```python
 from torchwarp import plot
 
-# uDTW paper, Fig. 2: sDTW / uDTW paths and uDTW uncertainty
 fig = plot.udtw_figure(X, Y, sx, sy, gammas=(0.01, 0.1))
 fig.savefig("udtw_paths.png")
-
-# JEANIE paper, Fig. 7: soft-DTW (view-wise), FVM, JEANIE;
-# one JEANIE panel per max_shift
-angles = [-60, -30, 0, 30, 60]
-fig = plot.viewpoint_figure(query, support, angles, max_shift=(1, 2))
-fig.savefig("viewpoint_paths.png")
 ```
 
-To draw skeletons as below, also pass `query_poses`, `support_poses`
-and `bones`.
-
-The paths are in `torchwarp.paths` (no matplotlib needed). Each
-distance is a soft minimum over the path distances
-w<sub>i</sub> = ⟨Π<sub>i</sub>, D⟩ of all paths Π<sub>i</sub> of the
-transportation plan (D ⊙ Σ<sup>†</sup> for uDTW, Eq. 2).
-`path_matrix` applies the soft-selector of uDTW Eq. 3 to the path
-matrices, SoftMinSel<sub>γ</sub>(w, [Π<sub>i</sub>]); it is the plot in
-uDTW Fig. 2 (a)–(d). `optimal_path` is the path with the smallest
-distance, as drawn in JEANIE Fig. 7.
+The paths are also available without matplotlib:
 
 ```python
 a = torchwarp.paths.udtw(X, Y, sx, sy, gamma=0.01)
+
 a.path_matrix   # [batch, len_x, len_y]
 a.optimal_path  # per pair: [(t, u), ...]
 a.Sigma         # pair-wise variances
 ```
 
-`path_matrix` is the gradient of the uDTW distance with respect to
-D ⊙ Σ<sup>†</sup>, so it can also be computed directly:
+`path_matrix` is SoftMinSel<sub>γ</sub>(w, [Π<sub>i</sub>]): the path
+matrices Π<sub>i</sub> of all paths, weighted by the soft-selector of
+Eq. 3 over their path distances w<sub>i</sub>. `optimal_path` is the
+path with the smallest distance. `path_matrix` is also the gradient of
+the uDTW distance with respect to D ⊙ Σ<sup>†</sup>:
 
 ```python
 DS, pen, Sigma = torchwarp.pairwise_matrices(X, Y, sx, sy)
 DS.requires_grad_(True)
+
 d, omega = torchwarp.udtw_from_matrices(DS, pen, gamma=0.01)
 d.sum().backward()
-DS.grad  # equals a.path_matrix
-```
 
-For JEANIE and FVM the cells have a viewpoint index:
-
-```python
-a = torchwarp.paths.jeanie(query, support, gamma=0.1, max_shift=1)
-a.path_matrix   # [batch, views, len_q, len_s]
-a.optimal_path  # per pair: [(t, u, view), ...]
+DS.grad  # same as a.path_matrix
 ```
 
 ECG5000, forecast vs. ground truth of a trained uDTW model:
 
 ![uDTW paths on ECG5000](assets/udtw_paths_ecg5000.png)
+
+#### Meet JEANIE
+
+Paths in 3D for soft-DTW (view-wise), FVM and JEANIE, one JEANIE panel
+per `max_shift` (JEANIE paper, Fig. 7):
+
+```python
+angles = [-60, -30, 0, 30, 60]
+fig = plot.viewpoint_figure(
+    query,
+    support,
+    angles,
+    max_shift=(1, 2),
+)
+fig.savefig("viewpoint_paths.png")
+```
+
+To also draw skeletons, pass `query_poses`, `support_poses`, and `bones`.
+For JEANIE and FVM, path cells also have a viewpoint index:
+
+```python
+a = torchwarp.paths.jeanie(
+    query,
+    support,
+    gamma=0.1,
+    max_shift=1,
+)
+
+a.path_matrix   # [batch, views, len_q, len_s]
+a.optimal_path  # per pair: [(t, u, view), ...]
+```
 
 NW-UCLA, query vs. support of the same action (donning), JEANIE with 1-max and 2-max shift:
 
