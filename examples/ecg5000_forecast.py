@@ -4,6 +4,7 @@ An MLP (84 -> 256 -> 56) predicts the last 40% of each series from the first
 60%. Training losses (squared-Euclidean frame cost):
   * euclidean: sum_t (pred_t - y_t)^2
   * dtw:       hard DTW (plain PyTorch dynamic program)
+  * sdtw:      soft-DTW sdtw(x,y)
   * sdtw_div:  soft-DTW divergence sdtw(x,y) - [sdtw(x,x) + sdtw(y,y)] / 2
   * udtw:      d_uDTW + beta * Omega (normalize=True), sigma from a SigmaNet
 
@@ -41,6 +42,7 @@ BASE = dict(
 LOSSES = {
     "euclidean": {},
     "dtw": {},
+    "sdtw": dict(gamma=0.001),
     "sdtw_div": dict(gamma=0.001),
     "udtw": dict(gamma=1.0, beta=1.0, sigma_a=2.0, sigma_b=0.1, lr=3e-3),
 }
@@ -108,9 +110,11 @@ def make_loss(name, cfg):
         return lambda pred, y, sigma: ((pred - y) ** 2).sum(1).mean()
     if name == "dtw":
         return lambda pred, y, sigma: hard_dtw_loss(pred, y).mean()
-    if name == "sdtw_div":
+    if name in ("sdtw", "sdtw_div"):
         def sdtw(a, b):
             return soft_dtw((a.unsqueeze(2) - b.unsqueeze(1)) ** 2, cfg["gamma"])
+        if name == "sdtw":
+            return lambda pred, y, sigma: sdtw(pred, y).mean()
         return lambda pred, y, sigma: (sdtw(pred, y) - 0.5 * (sdtw(pred, pred) + sdtw(y, y))).mean()
     crit = uDTW(gamma=cfg["gamma"], normalize=cfg["normalize"])
 

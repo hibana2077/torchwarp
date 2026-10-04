@@ -29,6 +29,11 @@ def _plt():
     return plt
 
 
+def _ticker():
+    import matplotlib.ticker
+    return matplotlib.ticker
+
+
 def _np(x):
     return x.detach().float().cpu().numpy() if torch.is_tensor(x) else np.asarray(x)
 
@@ -76,11 +81,21 @@ def uncertainty(a, index=0, ax=None, power=0.1, threshold=0.6, hist=True, title=
     ax.set_yticks([])
     ax.set_box_aspect(1)
     if hist:
-        ins = ax.inset_axes([0.5, 0.62, 0.48, 0.36])
-        ins.hist(on_path, bins=6, color="red", rwidth=0.8)
-        ins.set_facecolor("white")
-        ins.tick_params(labelsize=5, length=2, pad=1)
-        ins.set_xticks([])
+        ax.add_patch(plt.Rectangle((0.44, 0.52), 0.56, 0.48, transform=ax.transAxes,
+                                   facecolor="white", edgecolor="none"))
+        ins = ax.inset_axes([0.56, 0.64, 0.42, 0.34])
+        ins.set_facecolor("#f7f7f7")
+        ins.grid(True, color="#d0d0d0", linewidth=0.4)
+        ins.set_axisbelow(True)
+        ins.hist(on_path, bins=5, color="red", rwidth=0.9)
+        ins.set_ylabel("Counts", fontsize=6, labelpad=1)
+        ins.tick_params(labelsize=5, length=1.5, pad=1)
+        ins.set_yticklabels([])
+        ins.xaxis.set_major_locator(_ticker().MaxNLocator(4))
+        for side in ("top", "right"):
+            ins.spines[side].set_visible(False)
+        for side in ("left", "bottom"):
+            ins.spines[side].set_linewidth(0.4)
     if title:
         ax.set_title(title, y=-0.16, fontsize=10)
     return ax
@@ -224,17 +239,21 @@ def viewpoint_figure(query, support, angles, gamma=0.1, max_shift=1, metric="euc
     """JEANIE Fig. 7: soft-DTW per view, FVM and JEANIE (one path per start view).
 
     query [B, K, T, D] (or [K, T, D]), support [B, U, D] (or [U, D]).
-    ``axes``: three existing 3-D axes to draw into (e.g. one row of a larger
-    figure); ``titles``: three panel captions.
+    ``max_shift``: an int, or a sequence of ints for one JEANIE panel each.
+    ``axes``: existing 3-D axes to draw into, one per panel (e.g. one row of
+    a larger figure); ``titles``: one caption per panel.
     """
     plt = _plt()
+    shifts = [max_shift] if isinstance(max_shift, int) else list(max_shift)
+    n = 2 + len(shifts)
     if axes is None:
-        fig = plt.figure(figsize=(15, 4.6))
-        axes = [fig.add_subplot(1, 3, i + 1, projection="3d") for i in range(3)]
+        fig = plt.figure(figsize=(5 * n, 4.6))
+        axes = [fig.add_subplot(1, n, i + 1, projection="3d") for i in range(n)]
         fig.subplots_adjust(wspace=0.0, left=0.0, right=1.0, top=1.02, bottom=0.07)
     fig = axes[0].figure
-    titles = titles or ["(a) soft-DTW (applied per view)", "(b) FVM",
-                        "(c) JEANIE ({}-max shift)".format(max_shift)]
+    titles = titles or (["(a) soft-DTW (applied per view)", "(b) FVM"] +
+                        ["({}) JEANIE ({}-max shift)".format("cdefgh"[i], m)
+                         for i, m in enumerate(shifts)])
     kw = dict(angles=angles, query_poses=query_poses, support_poses=support_poses, bones=bones,
               index=index, pose_step=pose_step)
     g_s, g_f, g_j = sdtw_gamma or gamma, fvm_gamma or gamma, jeanie_gamma or gamma
@@ -247,8 +266,9 @@ def viewpoint_figure(query, support, angles, gamma=0.1, max_shift=1, metric="euc
     path_3d([f], [r"$d_{FVM} = %.2f$" % float(f.distance[index])], ax=axes[1],
             colors=[PATH_COLORS[3]], title=titles[1], **kw)
 
-    starts = [_paths.jeanie(query, support, g_j, max_shift, metric, angles, start_view=k)
-              for k in range(len(angles))]
-    path_3d(starts, ["{:.2f}".format(float(a.distance[index])) for a in starts],
-            ax=axes[2], title=titles[2], **kw)
+    for i, m in enumerate(shifts):
+        starts = [_paths.jeanie(query, support, g_j, m, metric, angles, start_view=k)
+                  for k in range(len(angles))]
+        path_3d(starts, ["{:.2f}".format(float(a.distance[index])) for a in starts],
+                ax=axes[2 + i], title=titles[2 + i], **kw)
     return fig

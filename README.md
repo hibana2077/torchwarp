@@ -106,9 +106,10 @@ from torchwarp import plot
 fig = plot.udtw_figure(X, Y, sx, sy, gammas=(0.01, 0.1))
 fig.savefig("udtw_paths.png")
 
-# soft-DTW / FVM / JEANIE paths (JEANIE paper, Fig. 7)
+# soft-DTW / FVM / JEANIE paths (JEANIE paper, Fig. 7),
+# one JEANIE panel per max_shift
 angles = [-60, -30, 0, 30, 60]  # one per query view
-fig = plot.viewpoint_figure(query, support, angles)
+fig = plot.viewpoint_figure(query, support, angles, max_shift=(1, 2))
 fig.savefig("viewpoint_paths.png")
 ```
 
@@ -125,7 +126,7 @@ ECG5000, forecast vs. ground truth of a trained uDTW model:
 
 ![uDTW paths on ECG5000](assets/udtw_paths_ecg5000.png)
 
-NW-UCLA, query vs. support of the same action (donning):
+NW-UCLA, query vs. support of the same action (donning), JEANIE with 1-max and 2-max shift:
 
 ![soft-DTW, FVM and JEANIE paths on NW-UCLA](assets/viewpoint_paths_nwucla.png)
 
@@ -152,6 +153,7 @@ UCR ECG5000: forecast the last 40% of each series from the first 60%. Rows: trai
 | --- | --- | --- | --- | --- |
 | Euclidean | 0.2161 ± 0.0065 | 5.5127 ± 0.3189 | 7.8376 ± 0.3005 | 2.5342 ± 0.0911 |
 | DTW | 0.7299 ± 0.1767 | 5.3317 ± 0.4190 | 19.0465 ± 3.5771 | 9.3703 ± 2.7353 |
+| sDTW | 0.7265 ± 0.1751 | 5.3920 ± 0.4921 | 18.9393 ± 3.6078 | 9.2567 ± 2.6598 |
 | sDTW div. | 0.7248 ± 0.1845 | 5.3684 ± 0.5537 | 19.0471 ± 3.7483 | 9.2619 ± 2.7557 |
 | uDTW | 0.2698 ± 0.0138 | 6.8878 ± 0.4812 | 8.4908 ± 0.4687 | 2.7986 ± 0.1459 |
 

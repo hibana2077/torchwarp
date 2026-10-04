@@ -106,3 +106,6 @@ def test_plot_figures():
                                 support_poses=poses_s, bones=[(0, 1), (1, 2)], pose_step=2)
     assert len(fig.axes) == 3
     plt.close(fig)
+    fig = plot.viewpoint_figure(q, s, [-60, -30, 0, 30, 60], max_shift=(1, 2))
+    assert len(fig.axes) == 4
+    plt.close(fig)
