@@ -118,7 +118,8 @@ and `bones`. The paths themselves are available without matplotlib:
 
 ```python
 a = torchwarp.paths.jeanie(query, support, gamma=0.1)
-a.soft  # path probabilities: [batch, views, len_q, len_s]
+# soft path: gradient of the distance w.r.t. the cost
+a.soft  # [batch, views, len_q, len_s]
 a.path  # hard path per pair: [(t, u, view), ...]
 ```
 
