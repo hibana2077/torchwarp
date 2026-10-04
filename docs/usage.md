@@ -1,6 +1,6 @@
 # Usage
 
-Detailed usage of torchwarp. For installation and a short example of each method, see the [README](../README.md).
+Step-by-step usage of torchwarp. For the exact arguments and shapes of every function see the [API reference](api.md); for installation see [Installation](installation.md).
 
 ## uDTW
 
@@ -139,6 +139,25 @@ D = torchwarp.euclidean_cost(query.unsqueeze(0), support.unsqueeze(0))
 d_fvm = torchwarp.fvm_query_only_1d(D, gamma=0.1)
 ```
 
+## soft-DTW and soft-DTW divergence
+
+`soft_dtw` takes a base distance matrix `[T, U]` or `[B, T, U]`. The
+soft-DTW divergence is
+sDTW(x, y) - ½ [sDTW(x, x) + sDTW(y, y)]:
+
+```python
+def sdtw(a, b, gamma=0.1):
+    return torchwarp.soft_dtw(torchwarp.squared_euclidean(a, b), gamma)
+
+
+# x, y: [batch, length, features]
+x = torch.randn(4, 30, 8, device="cuda")
+y = torch.randn(4, 40, 8, device="cuda")
+
+d_sdtw = sdtw(x, y)
+d_div = sdtw(x, y) - 0.5 * (sdtw(x, x) + sdtw(y, y))
+```
+
 ## Visualization
 
 `torchwarp.plot` draws the alignment paths of uDTW, soft-DTW, FVM and
@@ -202,7 +221,7 @@ test series:
 
 ![uDTW paths on ECG5000](../assets/udtw_paths_ecg5000.png)
 
-### Meet JEANIE
+### JEANIE
 
 ```python
 # soft-DTW per view, FVM, and one JEANIE panel per max_shift

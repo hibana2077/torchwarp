@@ -2,9 +2,7 @@
 
 ## What is torchwarp
 
-torchwarp is an unofficial, faster PyTorch/CUDA implementation of
-uncertainty-DTW (uDTW, ECCV 2022) and JEANIE (IJCV 2024), both proposed
-by Lei Wang, Piotr Koniusz et al.
+torchwarp is a faster PyTorch version of uncertainty-DTW (uDTW) and JEANIE.
 
 Key features:
 
@@ -118,9 +116,8 @@ NW-UCLA, a query and a support sequence of the same action (donning):
 
 The two figures use the models trained by the scripts in
 [`examples/`](examples/); `python examples/plot_paths.py` draws them
-again. See [docs/usage.md](docs/usage.md) for the definitions of the
-inputs and outputs, custom distances, how the viewpoints are simulated,
-two viewpoint axes, FVM, and the path tensors behind the plots.
+again. The [documentation](docs/index.md) covers installation details,
+step-by-step usage, the API reference and the benchmark setups.
 
 ## Results
 
@@ -149,7 +146,7 @@ UCR ECG5000: forecast the last 40% of each series from the first 60%. Rows: trai
 | sDTW div. | 0.7248 ± 0.1845 | 5.3684 ± 0.5537 | 19.0471 ± 3.7483 | 9.2619 ± 2.7557 |
 | uDTW | 0.2698 ± 0.0138 | 6.8878 ± 0.4812 | 8.4908 ± 0.4687 | 2.7986 ± 0.1459 |
 
-### Action recognition (NW-UCLA)
+### Few-shot action recognition (NW-UCLA)
 
 Cross-view 5-way 1-shot action recognition on NW-UCLA (train classes 1 to 5, test classes 6, 8, 9, 11, 12; queries from the unseen view 3).
 
