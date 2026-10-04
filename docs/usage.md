@@ -1,0 +1,226 @@
+# Usage
+
+Detailed usage of torchwarp. For installation and a short example of each method, see the [README](../README.md).
+
+## uDTW
+
+uDTW compares two sequences, for example two time series, or two
+skeleton sequences encoded as one feature vector per temporal block.
+Each time step i of a sequence has an uncertainty σ<sub>i</sub> > 0,
+predicted from the features by a small network (SigmaNet in the
+paper). For time steps i of X and j of Y, uDTW uses the variance
+Σ<sub>ij</sub> = ½ (σ<sub>i</sub>² + σ'<sub>j</sub>²) and returns two
+tensors of shape `[batch]`, one entry per pair (X[b], Y[b]):
+
+* `d`: the uDTW distance (Eq. 2), the soft minimum over all warping
+  paths of the sum of ‖x<sub>i</sub> - y<sub>j</sub>‖² / Σ<sub>ij</sub>
+  along the path;
+* `omega`: the penalty Ω (Eq. 3), β times the sum of log Σ<sub>ij</sub>
+  along the same soft-selected path.
+
+With `normalize=True` both are returned as
+d(X, Y) - ½ [d(X, X) + d(Y, Y)].
+
+```python
+import torch
+import torch.nn as nn
+import torchwarp
+
+# two batches of sequences: [batch, length, features]
+X = torch.randn(16, 30, 8, device="cuda", requires_grad=True)
+Y = torch.randn(16, 40, 8, device="cuda")
+
+# uncertainty sigma per time step: [batch, length, 1], positive
+sigma_net = nn.Sequential(
+    nn.Linear(8, 32),
+    nn.ReLU(),
+    nn.Linear(32, 1),
+    nn.Softplus(),
+).cuda()
+sx = sigma_net(X) + 1e-3
+sy = sigma_net(Y) + 1e-3
+
+# d and omega: [batch], one distance and one penalty per pair
+udtw = torchwarp.uDTW(gamma=1.0, normalize=True)
+d, omega = udtw(X, Y, sx, sy, beta=1.0)
+loss = (d + omega).mean()
+loss.backward()
+```
+
+`uDTW` uses the squared Euclidean distance between time steps. To use
+another distance between time steps, build the two `[batch, len_x, len_y]`
+matrices of Eq. 2 and Eq. 3 yourself, cost<sub>ij</sub> =
+d(x<sub>i</sub>, y<sub>j</sub>) / Σ<sub>ij</sub> and penalty<sub>ij</sub>
+= β log Σ<sub>ij</sub>, and pass them to `udtw_from_matrices`. Here
+`pairwise_matrices` returns the default cost, the penalty and Σ, and the
+cost is replaced by the cosine distance
+d(x<sub>i</sub>, y<sub>j</sub>) = 1 - cos(x<sub>i</sub>, y<sub>j</sub>):
+
+```python
+# default matrices, each [batch, len_x, len_y]
+cost, penalty, Sigma = torchwarp.pairwise_matrices(X, Y, sx, sy, beta=1.0)
+
+# cosine distance between time steps instead of the squared Euclidean one
+cos = nn.functional.cosine_similarity(X.unsqueeze(2), Y.unsqueeze(1), dim=-1)
+d, omega = torchwarp.udtw_from_matrices((1 - cos) / Sigma, penalty, gamma=1.0)
+```
+
+## JEANIE
+
+JEANIE compares two 3D skeleton sequences over time and camera
+viewpoint. The support sequence is used as recorded. The query is
+rotated to K simulated camera viewpoints before it is encoded;
+torchwarp does not do this rotation, so the query you pass already has
+the viewpoint axis. The example below rotates the 3D joints of the
+query about the vertical axis by each angle, splits both sequences into
+temporal blocks of 8 frames, and encodes each block with a linear
+layer:
+
+```python
+import math
+
+# simulated camera viewpoints (degrees about the vertical axis)
+angles = [-60, -30, 0, 30, 60]
+
+
+def rotate(skeleton, degrees):
+    a = math.radians(degrees)
+    R = torch.tensor([[math.cos(a), 0.0, math.sin(a)],
+                      [0.0, 1.0, 0.0],
+                      [-math.sin(a), 0.0, math.cos(a)]])
+    return skeleton @ R.T
+
+
+# [frames, joints, 3] -> [blocks, size * joints * 3]
+def blocks(skeleton, size=8, stride=4):
+    return skeleton.unfold(0, size, stride).flatten(1)
+
+
+# skeleton sequences: [frames, joints, 3]
+query_skeleton = torch.randn(32, 20, 3)
+support_skeleton = torch.randn(32, 20, 3)
+encoder = nn.Linear(8 * 20 * 3, 64)
+
+# query: [views, blocks, features], support: [blocks, features]
+query = torch.stack(
+    [encoder(blocks(rotate(query_skeleton, a))) for a in angles])
+support = encoder(blocks(support_skeleton))
+
+# dist: [batch]
+jeanie = torchwarp.JEANIE(gamma=0.1, max_shift=1)
+dist = jeanie(query.unsqueeze(0), support.unsqueeze(0))
+```
+
+Here a skeleton sequence is `[frames, joints, 3]`, `query` is
+`[views, blocks, features]` and `support` is `[blocks, features]`;
+`JEANIE` takes a batch, `[batch, views, blocks, features]` and
+`[batch, blocks, features]`, and returns `dist` of shape `[batch]`, the
+JEANIE distance of each query and support pair. `max_shift` is the
+ι-max shift: along the path, the viewpoint index changes by at most ι
+from one step to the next.
+
+The accumulator tensor R of Algorithm 1, `[batch, views, blocks_q,
+blocks_s]`, is returned with:
+
+```python
+# R: [batch, views, blocks_q, blocks_s]
+dist, R = jeanie(query.unsqueeze(0), support.unsqueeze(0),
+                 return_accumulator=True)
+```
+
+With two viewpoint axes (azimuth and altitude) the query is
+`[batch, views_az, views_alt, blocks, features]` and `max_shift` is a
+pair. FVM takes the matrix of base distances between every query view
+and the support:
+
+```python
+# base distances: [batch, views, blocks_q, blocks_s]
+D = torchwarp.euclidean_cost(query.unsqueeze(0), support.unsqueeze(0))
+d_fvm = torchwarp.fvm_query_only_1d(D, gamma=0.1)
+```
+
+## Visualization
+
+`torchwarp.plot` draws the alignment paths of uDTW, soft-DTW, FVM and
+JEANIE for sequences you pass in. torchwarp does not ship or download
+a pretrained model: the paths depend on the features you give, so use
+features from your own trained model. With untrained features the
+figures can still be drawn but the paths have no meaning.
+
+The two figures below come from the uDTW model trained by
+`examples/ecg5000_forecast.py` and the JEANIE encoder trained by
+`examples/nwucla_fewshot.py` (seed 42). To draw them again:
+
+```bash
+python examples/ecg5000_forecast.py --loss udtw --seeds 42 --save-ckpt examples/results/ckpt
+python examples/nwucla_fewshot.py --method jeanie --seeds 42 --save-ckpt examples/results/ckpt
+python examples/plot_paths.py
+```
+
+### uDTW
+
+```python
+from torchwarp import plot
+
+# sDTW and uDTW paths for each gamma, and uDTW uncertainty
+fig = plot.udtw_figure(X, Y, sx, sy, gammas=(0.01, 0.1))
+fig.savefig("udtw_paths.png")
+```
+
+The paths are also available without matplotlib:
+
+```python
+a = torchwarp.paths.udtw(X, Y, sx, sy, gamma=0.01)
+
+a.path_matrix   # [batch, len_x, len_y]
+a.optimal_path  # per pair: [(i, j), ...]
+a.Sigma         # [batch, len_x, len_y]
+```
+
+`a.path_matrix` is
+SoftMinSel<sub>γ</sub>(w, [Π<sub>i</sub>]): the path matrices
+Π<sub>i</sub> of all paths, weighted by the soft-selector of Eq. 3 over
+their path distances w<sub>i</sub>.
+`a.optimal_path` is the path with the smallest distance, a list of
+cells (i, j) per pair. `a.Sigma` holds the variances Σ<sub>ij</sub>.
+`a.path_matrix` is also the gradient of the uDTW distance with respect
+to the cost matrix:
+
+```python
+with torch.no_grad():
+    cost, penalty, Sigma = torchwarp.pairwise_matrices(X, Y, sx, sy)
+cost.requires_grad_(True)
+
+d, omega = torchwarp.udtw_from_matrices(cost, penalty, gamma=0.01)
+d.sum().backward()
+
+cost.grad  # equals a.path_matrix
+```
+
+ECG5000, forecast of the trained uDTW model vs. ground truth for one
+test series:
+
+![uDTW paths on ECG5000](../assets/udtw_paths_ecg5000.png)
+
+### Meet JEANIE
+
+```python
+# soft-DTW per view, FVM, and one JEANIE panel per max_shift
+fig = plot.viewpoint_figure(query, support, angles, max_shift=(1, 2))
+fig.savefig("viewpoint_paths.png")
+```
+
+To also draw the skeletons, pass `query_poses`, `support_poses` and
+`bones`. Without matplotlib:
+
+```python
+a = torchwarp.paths.jeanie(query, support, gamma=0.1, max_shift=1)
+
+a.path_matrix   # [batch, views, blocks_q, blocks_s]
+a.optimal_path  # per pair: [(t, u, view), ...]
+```
+
+NW-UCLA, a query and a support sequence of the same action (donning),
+JEANIE with 1-max and 2-max shift:
+
+![soft-DTW, FVM and JEANIE paths on NW-UCLA](../assets/viewpoint_paths_nwucla.png)
