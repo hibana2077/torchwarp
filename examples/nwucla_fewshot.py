@@ -175,7 +175,7 @@ def sample_episode(rng, pool, classes, cfg, n_query, query_views_allowed, suppor
     return sup, qry, torch.tensor(qlab)
 
 
-def run(method, cfg, seed, seqs, device):
+def run(method, cfg, seed, seqs, device, save_ckpt=None):
     rots = rotations(cfg)
     support_blocks = [blocks(torch.tensor(s, dtype=torch.float32), cfg) for _, _, s in seqs]
     query_blocks = [query_views(torch.tensor(s, dtype=torch.float32), rots, cfg)
@@ -226,6 +226,10 @@ def run(method, cfg, seed, seqs, device):
             pred = logits(sup, qry).argmax(1).cpu()
             correct += int((pred == lab).sum())
             total += len(lab)
+    if save_ckpt:
+        Path(save_ckpt).mkdir(parents=True, exist_ok=True)
+        torch.save(dict(encoder=enc.state_dict(), config=cfg),
+                   Path(save_ckpt) / "nwucla_{}_seed{}.pt".format(method, seed))
     return dict(seed=seed, accuracy=100.0 * correct / total, train_time_s=train_time)
 
 
@@ -235,6 +239,7 @@ def main():
     ap.add_argument("--seeds", type=int, nargs="+", default=[42, 43, 44])
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     ap.add_argument("--out", default=None)
+    ap.add_argument("--save-ckpt", default=None, metavar="DIR")
     args = ap.parse_args()
 
     cfg = dict(BASE, **METHODS[args.method])
@@ -243,7 +248,7 @@ def main():
     out.parent.mkdir(parents=True, exist_ok=True)
     runs = []
     for seed in args.seeds:
-        runs.append(run(args.method, cfg, seed, seqs, args.device))
+        runs.append(run(args.method, cfg, seed, seqs, args.device, args.save_ckpt))
         print(json.dumps(runs[-1]), flush=True)
         out.write_text(json.dumps(dict(method=args.method, config=cfg, torch=torch.__version__,
                                        runs=runs), indent=2))
