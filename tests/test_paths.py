@@ -31,13 +31,13 @@ def test_sdtw_hard_path_is_the_dtw_path(device):
     cost = torch.rand(3, 9, 12, dtype=torch.float64, device=device)
     a = paths.sdtw(cost, gamma=1e-3)
     for b in range(3):
-        check_monotone(a.path[b], 9, 12)
-        along = sum(float(cost[b, t, u]) for t, u in a.path[b])
+        check_monotone(a.optimal_path[b], 9, 12)
+        along = sum(float(cost[b, t, u]) for t, u in a.optimal_path[b])
         assert along == pytest.approx(float(exact_dtw(cost[b].cpu())), abs=1e-9)
-        # the soft path passes through the first and last cell with probability 1
-        assert float(a.soft[b, 0, 0]) == pytest.approx(1.0, abs=1e-6)
-        assert float(a.soft[b, -1, -1]) == pytest.approx(1.0, abs=1e-6)
-        assert float(a.soft[b].min()) >= -1e-9 and float(a.soft[b].max()) <= 1 + 1e-6
+        # the path matrix is 1 at the first and last cell with probability 1
+        assert float(a.path_matrix[b, 0, 0]) == pytest.approx(1.0, abs=1e-6)
+        assert float(a.path_matrix[b, -1, -1]) == pytest.approx(1.0, abs=1e-6)
+        assert float(a.path_matrix[b].min()) >= -1e-9 and float(a.path_matrix[b].max()) <= 1 + 1e-6
 
 
 @pytest.mark.parametrize("device", DEVICES)
@@ -49,9 +49,9 @@ def test_udtw_alignment(device):
     sy = torch.rand(2, 9, 1, dtype=torch.float64, device=device) + 0.5
     a = paths.udtw(X, Y, sx, sy, gamma=0.1, beta=1.0)
     d, omega = torchwarp.uDTW(gamma=0.1)(X, Y, sx, sy, beta=1.0)
-    assert torch.allclose(a.distance, d) and torch.allclose(a.penalty, omega)
-    assert a.soft.shape == a.variance.shape == (2, 7, 9)
-    for p in a.path:
+    assert torch.allclose(a.distance, d) and torch.allclose(a.Omega, omega)
+    assert a.path_matrix.shape == a.Sigma.shape == (2, 7, 9)
+    for p in a.optimal_path:
         check_monotone(p, 7, 9)
 
 
@@ -65,25 +65,61 @@ def test_jeanie_and_fvm_paths(device, max_shift):
 
     j = paths.jeanie(q, s, gamma=0.1, max_shift=max_shift)
     assert torch.allclose(j.distance, torchwarp.jeanie_1d_from_cost(cost, 0.1, max_shift))
-    assert j.soft.shape == (2, 5, 8, 10)
-    for p in j.path:
+    assert j.path_matrix.shape == (2, 5, 8, 10)
+    for p in j.optimal_path:
         check_monotone(p, 8, 10)
         assert all(abs(b[2] - a[2]) <= max_shift for a, b in zip(p, p[1:]))
 
     k0 = 3
     js = paths.jeanie(q, s, gamma=0.1, max_shift=max_shift, start_view=k0)
-    assert all(p[0][2] == k0 for p in js.path)
+    assert all(p[0][2] == k0 for p in js.optimal_path)
     assert torch.all(js.distance >= j.distance - 1e-9)
 
     f = paths.fvm(q, s, gamma=0.1)
     assert torch.allclose(f.distance, torchwarp.fvm_query_only_1d(cost, 0.1))
-    for p in f.path:
+    for p in f.optimal_path:
         check_monotone(p, 8, 10)
 
     views = paths.sdtw_per_view(q, s, gamma=0.1)
     assert len(views) == 5
     for k, v in enumerate(views):
-        assert all(c[2] == k for p in v.path for c in p)
+        assert all(c[2] == k for p in v.optimal_path for c in p)
+
+
+def all_paths(K, T, U, max_shift):
+    out = []
+
+    def rec(k, t, u, p):
+        if (t, u) == (T - 1, U - 1):
+            out.append(p)
+            return
+        for dt, du in ((1, 0), (0, 1), (1, 1)):
+            for dk in range(-max_shift, max_shift + 1):
+                if t + dt < T and u + du < U and 0 <= k + dk < K:
+                    rec(k + dk, t + dt, u + du, p + [(t + dt, u + du, k + dk)])
+    for k in range(K):
+        rec(k, 0, 0, [(0, 0, k)])
+    return out
+
+
+@pytest.mark.parametrize("gamma", [0.1, 1.0])
+@pytest.mark.parametrize("max_shift", [1, 2])
+def test_paths_match_enumeration(gamma, max_shift):
+    torch.manual_seed(1)
+    q = torch.randn(1, 3, 4, 3, dtype=torch.float64)
+    s = torch.randn(1, 5, 3, dtype=torch.float64)
+    for start in (None, 1):
+        j = paths.jeanie(q, s, gamma=gamma, max_shift=max_shift, start_view=start)
+        P = [p for p in all_paths(3, 4, 5, max_shift) if start is None or p[0][2] == start]
+        w = torch.stack([sum(j.D[0, k, t, u] for t, u, k in p) for p in P])
+        weights = torch.softmax(-w / gamma, 0)
+        pm = torch.zeros(3, 4, 5, dtype=torch.float64)
+        for a, p in zip(weights, P):
+            for t, u, k in p:
+                pm[k, t, u] += a
+        assert torch.allclose(j.path_matrix[0], pm, atol=1e-9)
+        assert float(j.distance[0]) == pytest.approx(float(-gamma * torch.logsumexp(-w / gamma, 0)))
+        assert j.optimal_path[0] == P[int(w.argmin())]
 
 
 def test_plot_figures():

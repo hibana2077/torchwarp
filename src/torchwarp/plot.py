@@ -1,9 +1,10 @@
 """Plots in the style of the uDTW and JEANIE papers (requires matplotlib).
 
-* ``alignment`` / ``uncertainty``: soft warping paths in white on black
-  (power-normalised), and Sigma on the path with a histogram (uDTW, Fig. 2).
-* ``path_3d``: paths in the (viewpoint, query time, support time) volume with
-  optional skeleton glyphs (JEANIE, Fig. 7).
+* ``alignment`` / ``uncertainty``: paths in white on black, pixels
+  power-normalized, and the uncertainty Sigma on the path with its histogram
+  (uDTW, Fig. 2).
+* ``path_3d``: optimal paths in 3D (viewpoint, query time, support time)
+  with optional skeletons (JEANIE, Fig. 7).
 * ``udtw_figure`` / ``viewpoint_figure``: the full multi-panel figures.
 
 Install the extra with ``pip install "torchwarp[vis]"``.
@@ -38,20 +39,23 @@ def _np(x):
     return x.detach().float().cpu().numpy() if torch.is_tensor(x) else np.asarray(x)
 
 
-def _image(soft, power):
-    img = np.clip(_np(soft), 0, None)
+def _image(path_matrix, power):
+    img = np.clip(_np(path_matrix), 0, None)
     img = img / max(img.max(), 1e-12)
     return img ** power
 
 
 def alignment(a, index=0, ax=None, power=0.1, title=None):
-    """Soft path occupancy of a 2-D Alignment, white on black (uDTW Fig. 2a-d)."""
+    """Paths in white on black, pixels power-normalized (uDTW Fig. 2a-d).
+
+    Plots ``a.path_matrix`` of batch item ``index``.
+    """
     plt = _plt()
     ax = ax or plt.gca()
-    soft = a.soft[index]
-    if soft.ndim == 3:                       # viewpoint axis: sum over views
-        soft = soft.sum(0)
-    ax.imshow(_image(soft, power), cmap="gray", vmin=0, vmax=1, aspect="auto",
+    pm = a.path_matrix[index]
+    if pm.ndim == 3:                         # viewpoint axis: sum over views
+        pm = pm.sum(0)
+    ax.imshow(_image(pm, power), cmap="gray", vmin=0, vmax=1, aspect="auto",
               interpolation="nearest")
     ax.set_xticks([])
     ax.set_yticks([])
@@ -62,17 +66,17 @@ def alignment(a, index=0, ax=None, power=0.1, title=None):
 
 
 def uncertainty(a, index=0, ax=None, power=0.1, threshold=0.6, hist=True, title=None):
-    """Sigma on the binarised path, white = high uncertainty (uDTW Fig. 2e).
+    """Uncertainty Sigma on the path, white pixels = high uncertainty (uDTW Fig. 2e).
 
-    The path is the power-normalised occupancy above ``threshold``; the inset
-    is the histogram of Sigma on the path.
+    The plot of ``alignment`` is binarized at ``threshold`` and multiplied by
+    Sigma; the inset is the histogram of the values of Sigma on the path.
     """
-    if a.variance is None:
+    if a.Sigma is None:
         raise ValueError("uncertainty() needs a uDTW Alignment (with variance)")
     plt = _plt()
     ax = ax or plt.gca()
-    mask = _image(a.soft[index], power) > threshold
-    var = _np(a.variance[index])
+    mask = _image(a.path_matrix[index], power) > threshold
+    var = _np(a.Sigma[index])
     on_path = var[mask]
     lo, hi = on_path.min(), on_path.max()
     img = np.where(mask, (var - lo) / max(hi - lo, 1e-12) * 0.85 + 0.15, 0.0)
@@ -125,18 +129,18 @@ def _glyph(ax, pose, origin, scale, color, bones, plane):
 def path_3d(alignments, labels=None, index=0, ax=None, angles=None, colors=None,
             query_poses=None, support_poses=None, bones=None, legend_loc="center left",
             title=None, elev=22, azim=-58, pose_step=1):
-    """Paths in the (viewpoint, query time, support time) volume (JEANIE Fig. 7).
+    """Optimal paths in 3D: viewpoint, query time, support time (JEANIE Fig. 7).
 
     Args:
-        alignments: an Alignment or a list of them; each contributes the hard
-            path of batch item ``index``. 2-D paths without a viewpoint are
-            drawn at viewpoint 0.
+        alignments: an Alignment or a list of them; each contributes the
+            optimal path of batch item ``index``. Paths without a viewpoint
+            are drawn at viewpoint 0.
         labels: legend entries, one per alignment (e.g. distances).
         angles: viewpoint labels in degrees, one per view.
         query_poses: optional [K, T, J, 2] poses drawn on the top plane, one
             per viewpoint and query time step (coloured per view).
         support_poses: optional [U, J, 2] poses drawn along the vertical axis.
-        bones: list of joint index pairs for the glyphs.
+        bones: list of joint index pairs for the skeletons.
         pose_step: draw a pose every ``pose_step`` time steps.
     """
     plt = _plt()
@@ -146,16 +150,16 @@ def path_3d(alignments, labels=None, index=0, ax=None, angles=None, colors=None,
         alignments = [alignments]
     colors = colors or PATH_COLORS
     first = alignments[0]
-    T, U = first.soft.shape[-2:]
+    T, U = first.path_matrix.shape[-2:]
     top = U - 1
     angles = angles if angles is not None else first.angles
     if angles is not None:
         K = len(angles)
     else:
-        K = first.soft.shape[1] if first.soft.ndim == 4 else 1
+        K = first.path_matrix.shape[1] if first.path_matrix.ndim == 4 else 1
 
     for n, a in enumerate(alignments):
-        p = np.array(a.path[index], dtype=float)
+        p = np.array(a.optimal_path[index], dtype=float)
         k = p[:, 2] if p.shape[1] == 3 else np.zeros(len(p))
         lab = labels[n] if labels is not None else None
         ax.plot(k, p[:, 0], top - p[:, 1], color=colors[n % len(colors)], lw=2.2,
@@ -211,7 +215,7 @@ def udtw_figure(X, Y, sigma_x, sigma_y, gammas=(0.01, 0.1), beta=1.0, index=0, p
     """uDTW Fig. 2: sDTW and uDTW paths for two gammas, and uDTW uncertainty.
 
     X [B, N, D], Y [B, M, D], sigma_x [B, N, 1], sigma_y [B, M, 1]; batch item
-    ``index`` is plotted. The sDTW panels use the same squared-Euclidean cost
+    ``index`` is plotted. The sDTW panels use the same distance matrix D
     with Sigma = 1.
     """
     plt = _plt()
@@ -236,7 +240,8 @@ def viewpoint_figure(query, support, angles, gamma=0.1, max_shift=1, metric="euc
                      query_poses=None, support_poses=None, bones=None, index=0,
                      sdtw_gamma=None, fvm_gamma=None, jeanie_gamma=None, axes=None,
                      titles=None, pose_step=1):
-    """JEANIE Fig. 7: soft-DTW per view, FVM and JEANIE (one path per start view).
+    """JEANIE Fig. 7: soft-DTW (view-wise), FVM and JEANIE (the optimal path for
+    each possible starting position).
 
     query [B, K, T, D] (or [K, T, D]), support [B, U, D] (or [U, D]).
     ``max_shift``: an int, or a sequence of ints for one JEANIE panel each.
@@ -251,7 +256,7 @@ def viewpoint_figure(query, support, angles, gamma=0.1, max_shift=1, metric="euc
         axes = [fig.add_subplot(1, n, i + 1, projection="3d") for i in range(n)]
         fig.subplots_adjust(wspace=0.0, left=0.0, right=1.0, top=1.02, bottom=0.07)
     fig = axes[0].figure
-    titles = titles or (["(a) soft-DTW (applied per view)", "(b) FVM"] +
+    titles = titles or (["(a) soft-DTW (view-wise)", "(b) FVM"] +
                         ["({}) JEANIE ({}-max shift)".format("cdefgh"[i], m)
                          for i, m in enumerate(shifts)])
     kw = dict(angles=angles, query_poses=query_poses, support_poses=support_poses, bones=bones,
