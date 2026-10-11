@@ -121,7 +121,7 @@ step-by-step usage, the API reference and the benchmark setups.
 
 ## Results
 
-Mean ± std over seeds 42, 43, 44. Hyperparameters are the defaults in [`examples/`](examples/); run `bash examples/download_data.sh` and then `python examples/ecg5000_forecast.py --loss <loss>` or `python examples/nwucla_fewshot.py --method <method>`.
+Hyperparameters are the defaults in [`examples/`](examples/); run `bash examples/download_data.sh` and then `python examples/ecg5000_forecast.py --setup paper --loss <loss> --seeds $(seq 0 99)` or `python examples/nwucla_fewshot.py --method <method>`.
 
 ### Speed-up
 
@@ -136,19 +136,19 @@ Mean time per training step (ms), official implementation vs torchwarp on the sa
 
 ### Time series forecasting (ECG5000)
 
-UCR ECG5000: forecast the last 40% of each series from the first 60%. Rows: training loss; columns: test metric (lower is better).
+UCR ECG5000: forecast the last 40% of each series from the first 60%, with the uDTW paper's pipeline and training settings (tanh MLP 84 → 30 → 56, N(0, 1) weights, SGD; details in [docs/benchmarks.md](docs/benchmarks.md#time-series-forecasting-ecg5000)). Mean ± std over 100 seeds (0 to 99). Rows: training loss; columns: test metric (lower is better); SSE sums the squared error over the 56 predicted steps. Bold: best, or not significantly worse (Welch t-test, p ≥ 0.05). Diverged runs (non-finite, or test DTW worse than predicting zeros) are left out of the mean.
 
-| training loss | MSE | DTW | sDTW div. | uDTW |
-| --- | --- | --- | --- | --- |
-| Euclidean | 0.2161 ± 0.0065 | 5.5127 ± 0.3189 | 7.8376 ± 0.3005 | 2.5342 ± 0.0911 |
-| DTW | 0.7299 ± 0.1767 | 5.3317 ± 0.4190 | 19.0465 ± 3.5771 | 9.3703 ± 2.7353 |
-| sDTW | 0.7265 ± 0.1751 | 5.3920 ± 0.4921 | 18.9393 ± 3.6078 | 9.2567 ± 2.6598 |
-| sDTW div. | 0.7248 ± 0.1845 | 5.3684 ± 0.5537 | 19.0471 ± 3.7483 | 9.2619 ± 2.7557 |
-| uDTW | 0.2698 ± 0.0138 | 6.8878 ± 0.4812 | 8.4908 ± 0.4687 | 2.7986 ± 0.1459 |
+| training loss | MSE | SSE | DTW | sDTW div. | uDTW | diverged runs |
+| --- | --- | --- | --- | --- | --- | --- |
+| Euclidean | **0.70 ± 0.18** | **39.05 ± 10.01** | **24.12 ± 7.54** | **30.42 ± 10.16** | **9.13 ± 2.72** | 0 |
+| DTW | 1.39 ± 0.10 | 77.98 ± 5.79 | 29.83 ± 2.17 | 46.48 ± 4.17 | 15.75 ± 1.45 | 0 |
+| sDTW | 1.29 ± 0.13 | 72.10 ± 7.12 | **25.52 ± 2.33** | 38.77 ± 4.17 | 13.95 ± 1.49 | 0 |
+| sDTW div. | 1.26 ± 0.17 | 70.37 ± 9.64 | **24.87 ± 3.45** | 36.08 ± 6.07 | 13.11 ± 2.13 | 0 |
+| uDTW | 1.36 ± 0.10 | 76.01 ± 5.61 | 26.55 ± 2.97 | 37.98 ± 3.46 | 14.65 ± 5.81 | 18 |
 
 ### Few-shot action recognition (NW-UCLA)
 
-Cross-view 5-way 1-shot action recognition on NW-UCLA (train classes 1 to 5, test classes 6, 8, 9, 11, 12; queries from the unseen view 3).
+Mean ± std over seeds 42, 43, 44. Cross-view 5-way 1-shot action recognition on NW-UCLA (train classes 1 to 5, test classes 6, 8, 9, 11, 12; queries from the unseen view 3).
 
 | method | accuracy (%) |
 | --- | --- |

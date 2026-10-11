@@ -139,6 +139,134 @@ D = torchwarp.euclidean_cost(query.unsqueeze(0), support.unsqueeze(0))
 d_fvm = torchwarp.fvm_query_only_1d(D, gamma=0.1)
 ```
 
+### Example: classify the queries of a few-shot episode
+
+In an N-way 1-shot episode every query is compared with every support
+(one support per class); the class of the closest support is the
+prediction. The negative distances are the logits for training:
+
+```python
+n_way, n_query = 5, 3
+device = "cuda"
+encoder = nn.Sequential(nn.Linear(8 * 20 * 3, 128), nn.ReLU(),
+                        nn.Linear(128, 64)).to(device)
+jeanie = torchwarp.JEANIE(gamma=0.1, max_shift=1)
+
+# one skeleton sequence per support class, n_query queries per class
+support_skeletons = torch.randn(n_way, 32, 20, 3)
+query_skeletons = torch.randn(n_way * n_query, 32, 20, 3)
+labels = torch.arange(n_way).repeat_interleave(n_query).to(device)
+
+# supports: [n_way, blocks, features]
+supports = torch.stack([encoder(blocks(sk).to(device)) for sk in support_skeletons])
+
+# queries: [n_query_total, views, blocks, features]
+queries = torch.stack([
+    torch.stack([encoder(blocks(rotate(sk, a)).to(device)) for a in angles])
+    for sk in query_skeletons])
+
+# all query-support pairs as one batch -> distances [n_query_total, n_way]
+nq, ns = len(queries), len(supports)
+q = queries.unsqueeze(1).expand(-1, ns, -1, -1, -1).flatten(0, 1)
+s = supports.unsqueeze(0).expand(nq, -1, -1, -1).flatten(0, 1)
+dist = jeanie(q, s).view(nq, ns)
+
+loss = nn.functional.cross_entropy(-dist, labels)
+loss.backward()
+pred = dist.argmin(1)
+```
+
+### Example: the effect of `max_shift`
+
+`max_shift = 0` keeps one viewpoint for the whole path (the soft minimum
+of soft-DTW over the viewpoints); larger shifts let the viewpoint move
+more, and `max_shift = K - 1` lets it move freely, which equals FVM. The
+distance can only decrease as `max_shift` grows:
+
+```python
+D = torchwarp.euclidean_cost(query.unsqueeze(0), support.unsqueeze(0))
+
+for shift in range(len(angles)):
+    d = torchwarp.jeanie_1d_from_cost(D, gamma=0.1, max_shift=shift)
+    print("max_shift", shift, d.item())
+
+print("FVM", torchwarp.fvm_query_only_1d(D, gamma=0.1).item())
+```
+
+### Example: which viewpoint the path uses
+
+`torchwarp.paths.jeanie` returns the optimal path, with the viewpoint
+index of every step:
+
+```python
+a = torchwarp.paths.jeanie(query, support, gamma=0.1, max_shift=1)
+
+# cells (query block, support block, viewpoint index)
+for t, u, k in a.optimal_path[0]:
+    print(t, u, angles[k])
+```
+
+### Example: two viewpoint axes
+
+Rotating the query about the vertical axis (azimuth) and about the
+horizontal axis (altitude) gives a grid of viewpoints,
+`[views_az, views_alt, blocks, features]`. `max_shift` is then a pair:
+
+```python
+def rotate_x(skeleton, degrees):
+    a = math.radians(degrees)
+    R = torch.tensor([[1.0, 0.0, 0.0],
+                      [0.0, math.cos(a), -math.sin(a)],
+                      [0.0, math.sin(a), math.cos(a)]])
+    return skeleton @ R.T
+
+
+azimuths = [-30, 0, 30]
+altitudes = [-15, 0, 15]
+
+# query_2d: [views_az, views_alt, blocks, features]
+query_2d = torch.stack([
+    torch.stack([encoder(blocks(rotate_x(rotate(query_skeleton, az), alt)).to(device))
+                 for alt in altitudes])
+    for az in azimuths])
+support_2d = encoder(blocks(support_skeleton).to(device))
+
+jeanie_2d = torchwarp.JEANIE(gamma=0.1, max_shift=(1, 1))
+dist_2d = jeanie_2d(query_2d.unsqueeze(0), support_2d.unsqueeze(0))
+```
+
+### Example: another base distance
+
+`metric` selects the distance between blocks (`"euclidean"`,
+`"sqeuclidean"` or `"rbf"`). For any other distance, compute the tensor
+of base distances yourself, `[batch, views, blocks_q, blocks_s]`, and
+call `jeanie_1d_from_cost`, here with the cosine distance:
+
+```python
+jeanie_sq = torchwarp.JEANIE(gamma=0.1, max_shift=1, metric="sqeuclidean")
+d_sq = jeanie_sq(query.unsqueeze(0), support.unsqueeze(0))
+
+# cosine distance between every query block (per view) and support block
+qn = nn.functional.normalize(query, dim=-1)
+sn = nn.functional.normalize(support, dim=-1)
+D_cos = 1 - qn @ sn.T
+d_cos = torchwarp.jeanie_1d_from_cost(D_cos.unsqueeze(0), gamma=0.1, max_shift=1)
+```
+
+### Example: backend and precision
+
+`backend="torch"` runs the PyTorch implementation even on the GPU (for
+example to compare with the CUDA kernel), and float64 inputs are
+computed in float64, which `torch.autograd.gradcheck` needs:
+
+```python
+q64 = torch.randn(1, 3, 4, 5, dtype=torch.float64, requires_grad=True)
+s64 = torch.randn(1, 6, 5, dtype=torch.float64)
+
+f = torchwarp.JEANIE(gamma=0.5, max_shift=1, backend="torch")
+print(torch.autograd.gradcheck(lambda x: f(x, s64), (q64,)))
+```
+
 ## soft-DTW and soft-DTW divergence
 
 `soft_dtw` takes a base distance matrix `[T, U]` or `[B, T, U]`. The

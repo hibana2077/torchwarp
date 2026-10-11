@@ -30,8 +30,7 @@ Where the speed comes from:
 
 These experiments check the implementation on the two tasks of the
 papers; they are run with the scripts in [`examples/`](../examples/).
-Results are mean ± std over seeds 42, 43 and 44. The hyperparameters are
-the defaults at the top of each script.
+The hyperparameters are the defaults at the top of each script.
 
 ### Data
 
@@ -45,34 +44,80 @@ downloads UCR ECG5000 (about 10 MB) and the NW-UCLA Multiview skeletons
 ### Time series forecasting (ECG5000)
 
 UCR ECG5000 has 500 training and 4500 test series of length 140. An MLP
-(84 → 256 → 56) predicts the last 40% of each series (56 steps) from
-the first 60% (84 steps).
+predicts the last 40% of each series (56 steps) from the first 60% (84
+steps). Models are trained on the 500 training series and evaluated on
+the 4500 test series.
 
+The pipeline and training settings follow the uDTW paper
+([arXiv 2211.00005](https://arxiv.org/abs/2211.00005), App. H.2, H.5
+and I.2), `--setup paper`:
+
+* MLP 84 → t′ → 56 with a tanh in between; every weight, bias included,
+  drawn from N(0, 1).
+* SGD, learning rate 1e-3, weight decay 1e-6.
+* SigmaNet: σ_t = κ · sigmoid(FC(ψ_t)) + η per time step, κ = 1.5,
+  η = 0.01, and Σ = σ²1ᵀ + 1σ′²ᵀ.
 * Training losses (squared Euclidean base distance): Euclidean, DTW,
-  soft-DTW, soft-DTW divergence and uDTW (distance plus penalty,
-  `normalize=True`, σ from a SigmaNet).
-* Test metrics (float64, lower is better): MSE, DTW, soft-DTW divergence
-  (γ = 1) and uDTW (γ = 1, β = 1, `normalize=True`). The uDTW metric
-  takes σ from one fixed SigmaNet trained with uDTW (seed 100), shared
-  by all models.
+  soft-DTW, soft-DTW divergence and uDTW (d_uDTW + β Ω, without
+  normalisation).
+
+The paper does not give t′, the number of epochs, the batch size, γ or
+β for this task, and tunes the remaining hyperparameters on a validation
+set. [`examples/tune_ecg5000_paper.py`](../examples/tune_ecg5000_paper.py)
+does the same on a fixed 400/100 split of the training set (the test set
+is not used): t′ ∈ {30, 50}, batch size ∈ {1, 10, 50}, epochs ∈ {30, 50,
+100}, γ ∈ {0.01, 0.1, 1}, β ∈ {0.01, 0.1, 1}, two seeds per point.
+Euclidean is selected by validation MSE and the alignment losses by
+validation DTW; grid points where a seed diverged are skipped. The
+selected values are `PAPER_LOSSES` in
+[`examples/ecg5000_forecast.py`](../examples/ecg5000_forecast.py):
+
+| training loss | t′ | batch size | epochs | γ | β |
+| --- | --- | --- | --- | --- | --- |
+| Euclidean | 30 | 1 | 50 | | |
+| DTW | 30 | 10 | 100 | | |
+| sDTW | 30 | 1 | 50 | 0.1 | |
+| sDTW div. | 30 | 1 | 100 | 0.1 | |
+| uDTW | 30 | 1 | 100 | 0.1 | 0.1 |
+
+Test metrics (float64, lower is better): MSE (per time step), SSE
+(summed over the 56 predicted steps), DTW, soft-DTW divergence (γ = 1)
+and uDTW (γ = 1, β = 1, `normalize=True`). The uDTW metric takes σ from
+one fixed SigmaNet trained with the uDTW setting above (seed 100), shared
+by all models.
 
 ```bash
-python examples/ecg5000_forecast.py --loss euclidean
-python examples/ecg5000_forecast.py --loss dtw
-python examples/ecg5000_forecast.py --loss sdtw
-python examples/ecg5000_forecast.py --loss sdtw_div
-python examples/ecg5000_forecast.py --loss udtw
+python examples/tune_ecg5000_paper.py count            # 204 grid runs
+python examples/tune_ecg5000_paper.py run --task 0     # one grid run
+python examples/tune_ecg5000_paper.py select           # pick PAPER_LOSSES
+
+python examples/ecg5000_forecast.py --setup paper --loss euclidean --seeds $(seq 0 99)
+python examples/ecg5000_forecast.py --setup paper --loss dtw --seeds $(seq 0 99)
+python examples/ecg5000_forecast.py --setup paper --loss sdtw --seeds $(seq 0 99)
+python examples/ecg5000_forecast.py --setup paper --loss sdtw_div --seeds $(seq 0 99)
+python examples/ecg5000_forecast.py --setup paper --loss udtw --seeds $(seq 0 99)
 ```
 
-Rows: training loss; columns: test metric.
+Mean ± std over seeds 0 to 99. Rows: training loss; columns: test
+metric. Bold: best, or not significantly worse (Welch t-test,
+p ≥ 0.05). A run counts as diverged if a metric is non-finite or its
+test DTW is worse than predicting zeros (64.15); diverged runs are left
+out of the mean. Of the 18 diverged uDTW runs, 14 ended in NaN and 4
+reached a test DTW of 226 to 1288.
 
-| training loss | MSE | DTW | sDTW div. | uDTW |
-| --- | --- | --- | --- | --- |
-| Euclidean | 0.2161 ± 0.0065 | 5.5127 ± 0.3189 | 7.8376 ± 0.3005 | 2.5342 ± 0.0911 |
-| DTW | 0.7299 ± 0.1767 | 5.3317 ± 0.4190 | 19.0465 ± 3.5771 | 9.3703 ± 2.7353 |
-| sDTW | 0.7265 ± 0.1751 | 5.3920 ± 0.4921 | 18.9393 ± 3.6078 | 9.2567 ± 2.6598 |
-| sDTW div. | 0.7248 ± 0.1845 | 5.3684 ± 0.5537 | 19.0471 ± 3.7483 | 9.2619 ± 2.7557 |
-| uDTW | 0.2698 ± 0.0138 | 6.8878 ± 0.4812 | 8.4908 ± 0.4687 | 2.7986 ± 0.1459 |
+| training loss | MSE | SSE | DTW | sDTW div. | uDTW | diverged runs |
+| --- | --- | --- | --- | --- | --- | --- |
+| Euclidean | **0.70 ± 0.18** | **39.05 ± 10.01** | **24.12 ± 7.54** | **30.42 ± 10.16** | **9.13 ± 2.72** | 0 |
+| DTW | 1.39 ± 0.10 | 77.98 ± 5.79 | 29.83 ± 2.17 | 46.48 ± 4.17 | 15.75 ± 1.45 | 0 |
+| sDTW | 1.29 ± 0.13 | 72.10 ± 7.12 | **25.52 ± 2.33** | 38.77 ± 4.17 | 13.95 ± 1.49 | 0 |
+| sDTW div. | 1.26 ± 0.17 | 70.37 ± 9.64 | **24.87 ± 3.45** | 36.08 ± 6.07 | 13.11 ± 2.13 | 0 |
+| uDTW | 1.36 ± 0.10 | 76.01 ± 5.61 | 26.55 ± 2.97 | 37.98 ± 3.46 | 14.65 ± 5.81 | 18 |
+
+With batch size 1 these runs take 0.1 (Euclidean) to 42 (sDTW div.)
+minutes each on one CPU core; the GPU does not help at this size.
+
+The previous default setting (ReLU MLP 84 → 256 → 56, PyTorch's default
+init, Adam) is still available as `--setup default`.
 
 ### Action recognition (NW-UCLA)
 
@@ -112,6 +157,11 @@ python examples/nwucla_fewshot.py --method jeanie
 | option | script | description |
 | --- | --- | --- |
 | `--seeds` | both | Seeds to run (default `42 43 44`). |
+| `--setup` | ECG5000 | `default` or `paper` (the uDTW paper's pipeline). |
+| `--val` | ECG5000 | Train on 400 training series and evaluate on the other 100. |
+| `--set KEY=VALUE` | ECG5000 | Override configuration entries, e.g. `--set epochs=30 gamma=0.1`. |
+| `--eval-epochs` | ECG5000 | Also evaluate after these epochs. |
+| `--threads` | ECG5000 | Number of CPU threads. |
 | `--device` | both | `cuda` (default when available) or `cpu`. |
 | `--out` | both | Output JSON file (default `examples/results/<task>_<method>.json`). |
 | `--save-ckpt DIR` | both | Save the trained model of each seed to `DIR`. |
@@ -133,3 +183,18 @@ python examples/plot_paths.py
 `--ecg-index`, default 0) and `assets/viewpoint_paths_nwucla.png`
 (dataset indices `--query` and `--support`, default 970 and 1005, two
 sequences of the action donning).
+
+To draw the soft-DTW, FVM and JEANIE paths for the whole NW-UCLA test
+split (225 queries of view 3, each with a random support of the same
+action from views 1 and 2):
+
+```bash
+python examples/plot_jeanie_paths.py
+```
+
+The figures and `index.csv` (the distances in each figure) are written to
+`examples/results/figures/nwucla/`. Options: `--support nearest` uses the
+same-action support with the smallest JEANIE distance, `--max-shift`
+sets the JEANIE panels (default `1 2`), `--limit N` draws only the first
+N queries, and `--query I --support J` draws one pair.
+

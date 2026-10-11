@@ -1,24 +1,40 @@
 """ECG5000 forecasting (UCR ECG5000, 500 train / 4500 test series of length 140).
 
-An MLP (84 -> 256 -> 56) predicts the last 40% of each series from the first
-60%. Training losses (squared-Euclidean frame cost):
+An MLP predicts the last 40% of each series (56 steps) from the first 60%
+(84 steps). Training losses (squared-Euclidean frame cost):
   * euclidean: sum_t (pred_t - y_t)^2
   * dtw:       hard DTW (plain PyTorch dynamic program)
   * sdtw:      soft-DTW sdtw(x,y)
   * sdtw_div:  soft-DTW divergence sdtw(x,y) - [sdtw(x,x) + sdtw(y,y)] / 2
-  * udtw:      d_uDTW + beta * Omega (normalize=True), sigma from a SigmaNet
+  * udtw:      d_uDTW + beta * Omega, sigma from a SigmaNet
 
-Test metrics (float64, lower is better): MSE, DTW, sDTW div. (gamma=1) and
-uDTW (gamma=1, beta=1, normalize=True). The uDTW metric takes sigma from one
-fixed evaluation SigmaNet (a uDTW run with the base configuration and seed
-EVAL_SEED), shared by every model.
+Two setups:
+  * default: ReLU MLP 84 -> 256 -> 56 with PyTorch's default init, Adam,
+    and a SigmaNet MLP over the whole sequence.
+  * paper:   the uDTW paper's pipeline (arXiv 2211.00005, App. H.2 / H.5):
+    tanh MLP 84 -> t' -> 56 with every weight drawn from N(0, 1), SGD
+    (lr 1e-3, weight decay 1e-6), a per-timestep SigmaNet
+    sigma_t = kappa * sigmoid(FC(psi_t)) + eta (kappa = 1.5, eta = 0.01) and
+    Sigma = sigma^2 1^T + 1 sigma'^2^T. The paper leaves t', epochs, batch
+    size, gamma and beta unspecified; the values in PAPER_LOSSES were
+    selected on a 400/100 validation split of the training set
+    (examples/tune_ecg5000_paper.py).
+
+Test metrics (float64, lower is better): MSE (per time step), SSE (summed
+over the 56 predicted steps), DTW, sDTW div. (gamma=1) and uDTW (gamma=1,
+beta=1, normalize=True). The uDTW metric takes sigma from one fixed
+evaluation SigmaNet (a uDTW run with seed EVAL_SEED and the EVAL_SIGMA
+configuration of the setup), shared by every model.
 
 Usage:
   python examples/ecg5000_forecast.py --loss udtw
+  python examples/ecg5000_forecast.py --setup paper --loss udtw --seeds $(seq 0 99)
 """
 
 import argparse
+import copy
 import json
+import math
 import time
 from pathlib import Path
 
@@ -34,10 +50,11 @@ DATA = ROOT / "examples" / "data"
 RESULTS = ROOT / "examples" / "results"
 
 BASE = dict(
-    input_len=84, output_len=56, hidden=256,
-    sigma_hidden=64, sigma_a=1.5, sigma_b=0.5,   # sigma = a * sigmoid(.) + b
+    input_len=84, output_len=56, hidden=256, act="relu", init="default",
+    sigmanet="mlp", sigma_hidden=64, sigma_a=1.5, sigma_b=0.5,   # sigma = a * sigmoid(.) + b
+    sigma_sum=False,                                             # Sigma = 0.5 (s^2 + s'^2)
     gamma=1.0, beta=1.0, normalize=True,
-    lr=1e-3, batch_size=50, epochs=100,
+    optimizer="adam", lr=1e-3, weight_decay=0.0, batch_size=50, epochs=100,
 )
 LOSSES = {
     "euclidean": {},
@@ -46,7 +63,37 @@ LOSSES = {
     "sdtw_div": dict(gamma=0.001),
     "udtw": dict(gamma=1.0, beta=1.0, sigma_a=2.0, sigma_b=0.1, lr=3e-3),
 }
+PAPER_BASE = dict(
+    input_len=84, output_len=56, hidden=50, act="tanh", init="normal",
+    sigmanet="point", sigma_a=1.5, sigma_b=0.01,                 # kappa, eta (App. I.2)
+    sigma_sum=True,                                              # Sigma = s^2 + s'^2
+    gamma=1.0, beta=1.0, normalize=False,
+    optimizer="sgd", lr=1e-3, weight_decay=1e-6, batch_size=1, epochs=100,
+    clip=0.0,                                                    # max grad norm, 0 = off
+)
+PAPER_LOSSES = {                                    # tune_ecg5000_paper.py select
+    "euclidean": dict(hidden=30, batch_size=1, epochs=50),
+    "dtw": dict(hidden=30, batch_size=10, epochs=100),
+    "sdtw": dict(hidden=30, batch_size=1, epochs=50, gamma=0.1),
+    "sdtw_div": dict(hidden=30, batch_size=1, epochs=100, gamma=0.1),
+    "udtw": dict(hidden=30, batch_size=1, epochs=100, gamma=1.0, beta=0.1,
+                 sigma_a=3.0, sigma_b=0.5),
+}
+SETUPS = {"default": (BASE, LOSSES), "paper": (PAPER_BASE, PAPER_LOSSES)}
+# SigmaNet of the uDTW test metric, kept fixed so that metric does not change
+# when the uDTW training configuration does.
+EVAL_SIGMA = {"default": BASE,
+              "paper": dict(PAPER_BASE, hidden=30, batch_size=1, epochs=100, gamma=0.1, beta=0.1)}
 EVAL_SEED = 100
+
+
+def config(setup, loss, overrides=()):
+    base, losses = SETUPS[setup]
+    cfg = dict(base, **losses[loss])
+    for kv in overrides:
+        key, value = kv.split("=", 1)
+        cfg[key] = type(base[key])(value) if not isinstance(base[key], bool) else value == "True"
+    return cfg
 
 
 def load_split(name):
@@ -54,10 +101,17 @@ def load_split(name):
     return torch.tensor(arr[:, 1:], dtype=torch.float32)  # drop the class label
 
 
+def split_validation(train, n_val=100):
+    """Fixed 400/100 train/validation split of the training set."""
+    perm = torch.randperm(len(train), generator=torch.Generator().manual_seed(0))
+    return train[perm[n_val:]], train[perm[:n_val]]
+
+
 class Forecaster(nn.Module):
     def __init__(self, cfg):
         super().__init__()
-        self.net = nn.Sequential(nn.Linear(cfg["input_len"], cfg["hidden"]), nn.ReLU(),
+        act = nn.Tanh() if cfg.get("act", "relu") == "tanh" else nn.ReLU()
+        self.net = nn.Sequential(nn.Linear(cfg["input_len"], cfg["hidden"]), act,
                                  nn.Linear(cfg["hidden"], cfg["output_len"]))
 
     def forward(self, x):
@@ -76,6 +130,34 @@ class SigmaNet(nn.Module):
 
     def forward(self, z):
         return self.a * torch.sigmoid(self.net(z)) + self.b
+
+
+class PointSigmaNet(nn.Module):
+    """Paper SigmaNet (App. H.2, Eq. 25): sigma_t = kappa * sigmoid(FC(psi_t)) + eta."""
+
+    def __init__(self, cfg):
+        super().__init__()
+        self.fc = nn.Linear(1, 1)
+        self.a, self.b = cfg["sigma_a"], cfg["sigma_b"]
+
+    def forward(self, z):
+        return self.a * torch.sigmoid(self.fc(z.unsqueeze(-1)).squeeze(-1)) + self.b
+
+
+def make_models(cfg):
+    f = Forecaster(cfg)
+    sigma = PointSigmaNet(cfg) if cfg.get("sigmanet") == "point" else SigmaNet(cfg)
+    if cfg.get("init") == "normal":                      # App. H.5: weights ~ N(0, 1)
+        for p in list(f.parameters()) + list(sigma.parameters()):
+            nn.init.normal_(p, 0.0, 1.0)
+    return f, sigma
+
+
+def udtw_sigmas(sigma, z, cfg):
+    """[B, L, 1] standard deviations for torchwarp.uDTW, which uses
+    Sigma = 0.5 (s^2 + s'^2); scaling by sqrt(2) gives Sigma = s^2 + s'^2."""
+    s = sigma(z).unsqueeze(-1)
+    return s * math.sqrt(2.0) if cfg.get("sigma_sum") else s
 
 
 def hard_dtw_loss(a, b):
@@ -120,22 +202,27 @@ def make_loss(name, cfg):
 
     def loss(pred, y, sigma):
         d, p = crit(pred.unsqueeze(-1), y.unsqueeze(-1),
-                    sigma(pred).unsqueeze(-1), sigma(y).unsqueeze(-1), beta=cfg["beta"])
+                    udtw_sigmas(sigma, pred, cfg), udtw_sigmas(sigma, y, cfg), beta=cfg["beta"])
         return (d + p).mean()
     return loss
 
 
-def train_one(name, cfg, seed, train, device):
+def train_one(name, cfg, seed, train, device, on_epoch=None):
+    """Train one model; on_epoch(epoch, f, sigma) is called after each epoch."""
     torch.manual_seed(seed)
-    f, sigma = Forecaster(cfg).to(device), SigmaNet(cfg).to(device)
+    f, sigma = make_models(cfg)
+    f, sigma = f.to(device), sigma.to(device)
     crit = make_loss(name, cfg)
     params = list(f.parameters()) + (list(sigma.parameters()) if name == "udtw" else [])
-    opt = torch.optim.Adam(params, lr=cfg["lr"])
+    if cfg.get("optimizer", "adam") == "sgd":
+        opt = torch.optim.SGD(params, lr=cfg["lr"], weight_decay=cfg["weight_decay"])
+    else:
+        opt = torch.optim.Adam(params, lr=cfg["lr"], weight_decay=cfg.get("weight_decay", 0.0))
     x_all, y_all = train[:, :cfg["input_len"]], train[:, cfg["input_len"]:]
     gen = torch.Generator().manual_seed(seed)
 
     step_time = 0.0
-    for _ in range(cfg["epochs"]):
+    for epoch in range(1, cfg["epochs"] + 1):
         perm = torch.randperm(len(train), generator=gen)
         for k in range(0, len(train), cfg["batch_size"]):
             idx = perm[k:k + cfg["batch_size"]]
@@ -146,10 +233,14 @@ def train_one(name, cfg, seed, train, device):
             loss = crit(f(x), y, sigma)
             opt.zero_grad(set_to_none=True)
             loss.backward()
+            if cfg.get("clip"):
+                nn.utils.clip_grad_norm_(params, cfg["clip"])
             opt.step()
             if device == "cuda":
                 torch.cuda.synchronize()
             step_time += time.perf_counter() - t0
+        if on_epoch is not None:
+            on_epoch(epoch, f, sigma)
     return f.cpu(), sigma.cpu(), step_time
 
 
@@ -169,20 +260,23 @@ def hard_dtw(a, b):
     return R[:, N, M]
 
 
-def eval_sigmanet(train, device):
+def eval_sigmanet(setup, train, device):
     """The fixed SigmaNet of the uDTW test metric (trained once, then cached)."""
-    path = RESULTS / "ecg5000_eval_sigmanet_seed{}.pt".format(EVAL_SEED)
-    sigma = SigmaNet(BASE)
+    cfg = EVAL_SIGMA[setup]
+    suffix = "" if setup == "default" else "_" + setup
+    path = RESULTS / "ecg5000_eval_sigmanet{}_seed{}.pt".format(suffix, EVAL_SEED)
+    _, sigma = make_models(cfg)
     if path.exists():
         sigma.load_state_dict(torch.load(path))
     else:
-        _, sigma, _ = train_one("udtw", BASE, EVAL_SEED, train, device)
+        _, sigma, _ = train_one("udtw", cfg, EVAL_SEED, train, device)
         path.parent.mkdir(parents=True, exist_ok=True)
         torch.save(sigma.state_dict(), path)
-    return sigma.double().eval()
+    return sigma.double().eval(), cfg
 
 
 def evaluate(f, sigma_eval, test, cfg):
+    """Test metrics; sigma_eval = (SigmaNet, its config) or None to skip uDTW."""
     metric = uDTW(gamma=1.0, normalize=True, backend="torch")
     x = test[:, :cfg["input_len"]].double()
     y = test[:, cfg["input_len"]:].double()
@@ -191,43 +285,72 @@ def evaluate(f, sigma_eval, test, cfg):
         p3, y3 = pred.unsqueeze(-1), y.unsqueeze(-1)
         one = torch.ones_like(y3)
         sdtw_div, _ = metric(p3, y3, one, one, beta=0.0)      # sigma = 1: soft-DTW
-        d, pen = metric(p3, y3, sigma_eval(pred).unsqueeze(-1), sigma_eval(y).unsqueeze(-1),
-                        beta=1.0)
-        return dict(
-            mse=float(((pred - y) ** 2).mean()),
+        se = (pred - y) ** 2
+        out = dict(
+            mse=float(se.mean()),
+            sse=float(se.sum(1).mean()),
             dtw=float(hard_dtw(pred, y).mean()),
             sdtw_div=float(sdtw_div.mean()),
-            udtw=float((d + pen).mean()),
         )
+        if sigma_eval is not None:
+            sigma, scfg = sigma_eval
+            d, pen = metric(p3, y3, udtw_sigmas(sigma, pred, scfg), udtw_sigmas(sigma, y, scfg),
+                            beta=1.0)
+            out["udtw"] = float((d + pen).mean())
+        return out
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--loss", choices=sorted(LOSSES), required=True)
+    ap.add_argument("--setup", choices=sorted(SETUPS), default="default")
     ap.add_argument("--seeds", type=int, nargs="+", default=[42, 43, 44])
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
+    ap.add_argument("--val", action="store_true",
+                    help="train on 400 training series, evaluate on the other 100 (no uDTW metric)")
+    ap.add_argument("--set", nargs="*", default=[], metavar="KEY=VALUE",
+                    help="override config entries, e.g. --set epochs=30 gamma=0.1")
+    ap.add_argument("--eval-epochs", type=int, nargs="*", default=[],
+                    help="also evaluate after these epochs (stored under 'at_epoch')")
+    ap.add_argument("--threads", type=int, default=None)
     ap.add_argument("--out", default=None)
     ap.add_argument("--save-ckpt", default=None, metavar="DIR")
     args = ap.parse_args()
 
     torch.backends.cudnn.deterministic = True
-    cfg = dict(BASE, **LOSSES[args.loss])
-    train, test = load_split("TRAIN"), load_split("TEST")
-    sigma_eval = eval_sigmanet(train, args.device)
-    out = Path(args.out or RESULTS / "ecg5000_{}.json".format(args.loss))
+    if args.threads:
+        torch.set_num_threads(args.threads)
+    cfg = config(args.setup, args.loss, args.set)
+    train, test = load_split("TRAIN"), None
+    if args.val:
+        train, test = split_validation(train)
+        sigma_eval = None
+    else:
+        test = load_split("TEST")
+        sigma_eval = eval_sigmanet(args.setup, train, args.device)
+    suffix = "" if args.setup == "default" else "_" + args.setup
+    out = Path(args.out or RESULTS / "ecg5000{}_{}.json".format(suffix, args.loss))
     out.parent.mkdir(parents=True, exist_ok=True)
     runs = []
     for seed in args.seeds:
-        f, sigma, t = train_one(args.loss, cfg, seed, train, args.device)
+        at_epoch = {}
+
+        def on_epoch(epoch, f, sigma):
+            if epoch in args.eval_epochs and epoch != cfg["epochs"]:
+                at_epoch[epoch] = evaluate(copy.deepcopy(f).cpu(), sigma_eval, test, cfg)
+
+        f, sigma, t = train_one(args.loss, cfg, seed, train, args.device, on_epoch)
         if args.save_ckpt:
             ckpt = Path(args.save_ckpt)
             ckpt.mkdir(parents=True, exist_ok=True)
             torch.save(dict(forecaster=f.state_dict(), sigmanet=sigma.state_dict(), config=cfg),
-                       ckpt / "ecg5000_{}_seed{}.pt".format(args.loss, seed))
+                       ckpt / "ecg5000{}_{}_seed{}.pt".format(suffix, args.loss, seed))
         runs.append(dict(seed=seed, train_time_s=t, **evaluate(f, sigma_eval, test, cfg)))
+        if at_epoch:
+            runs[-1]["at_epoch"] = at_epoch
         print(json.dumps(runs[-1]), flush=True)
-        out.write_text(json.dumps(dict(loss=args.loss, config=cfg, torch=torch.__version__,
-                                       runs=runs), indent=2))
+        out.write_text(json.dumps(dict(loss=args.loss, setup=args.setup, val=args.val, config=cfg,
+                                       torch=torch.__version__, runs=runs), indent=2))
 
 
 if __name__ == "__main__":
