@@ -25,7 +25,7 @@ git clone https://github.com/hibana2077/torchwarp && cd torchwarp
 pip install -r requirements.txt -e .
 ```
 
-With uv (pick `cu126`, `cu128` or `cpu`):
+If you perfer using uv (pick `cu126`, `cu128` or `cpu`):
 
 ```bash
 git clone https://github.com/hibana2077/torchwarp && cd torchwarp
