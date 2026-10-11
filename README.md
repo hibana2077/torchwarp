@@ -24,11 +24,11 @@ CUDA acceleration needs a CUDA-enabled PyTorch build and a CUDA toolkit (`nvcc`)
 
 [TODO: Insert a verified minimal uDTW example.]
 
-### JEANIE
+### JEANIE and FVM
 
 ```python
 import torch
-from torchwarp import euclidean_cost, jeanie_1d_from_cost
+from torchwarp import euclidean_cost, jeanie_1d_from_cost, fvm_query_only_1d
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -39,13 +39,13 @@ support_features = torch.randn(7, 64, device=device)
 
 cost = euclidean_cost(query_features, support_features)
 
-distance = jeanie_1d_from_cost(
-    cost,
-    gamma=0.1,
-    max_shift=1,
-)
+# JEANIE
+d_jeanie = jeanie_1d_from_cost(cost, gamma=0.1, max_shift=1)
 
-distance.backward()
+# FVM
+d_fvm = fvm_query_only_1d(cost, gamma=0.1)
+
+d_jeanie.backward()
 ```
 
 where:
@@ -57,9 +57,10 @@ where:
 
 The features are encoded temporal blocks of 3D skeleton sequences; the
 query is rotated to `K` simulated camera viewpoints before encoding.
-`cost` has shape `[K, T, U]`. For a batch, add a leading dimension
-(`[B, K, T, D]`, `[B, U, D]`). See the [usage guide](docs/usage.md) for
-FVM, two viewpoint axes and the `torchwarp.JEANIE` module.
+`cost` has shape `[K, T, U]`.
+
+For batched inputs and more advanced configurations, including two
+viewpoint axes, see the [usage guide](docs/usage.md).
 
 ## Results
 
@@ -79,6 +80,12 @@ n/a: not benchmarked against an original implementation.
 | FVM | 41.15 ± 0.43 | 163.6 | 5.53 | 30× | 386.8 | 3.75 | 103× |
 | JEANIE (1-max shift) | 38.75 ± 1.91 | 886.1 | 7.40 | 120× | 2116.3 | 2.74 | 774× |
 | JEANIE (2-max shift) | 37.08 ± 2.37 | 1017.6 | 11.17 | 91× | 2197.0 | 2.28 | 963× |
+
+Alignment paths of soft-DTW (per viewpoint), FVM and JEANIE for a query
+(view 3) and a support (view 1) of the action donning, with the trained
+JEANIE encoder (seed 42):
+
+![soft-DTW, FVM and JEANIE paths on NW-UCLA](assets/viewpoint_paths_nwucla.png)
 
 Hardware, software versions, timing method and experimental settings are in [benchmarks](docs/benchmarks.md).
 
