@@ -200,7 +200,7 @@ If you find this project useful for your research, please cite the following ori
 
 ```bibtex
 @article{wang2024meet,
-  title={Meet {JEANIE}: A Similarity Measure for {3D} Skeleton Sequences via Temporal-Viewpoint Alignment},
+  title={Meet jeanie: a similarity measure for 3d skeleton sequences via temporal-viewpoint alignment},
   author={Wang, Lei and Liu, Jun and Zheng, Liang and Gedeon, Tom and Koniusz, Piotr},
   journal={International Journal of Computer Vision},
   volume={132},
