@@ -1,6 +1,6 @@
 # torchwarp
 
-## What is torchwarp
+<!-- ## What is torchwarp
 
 torchwarp is a faster PyTorch version of uncertainty-DTW (uDTW) and JEANIE.
 
@@ -12,7 +12,7 @@ Key features:
   with the same values and gradients as the official code.
 * Up to 1345× (uDTW) and 1091× (JEANIE) faster training steps than the
   official code on the GPU, see [Speed-up](#speed-up).
-* Plots of the alignment paths of uDTW, soft-DTW, FVM and JEANIE.
+* Plots of the alignment paths of uDTW, soft-DTW, FVM and JEANIE. -->
 
 ## Quick start
 
@@ -35,7 +35,7 @@ uv sync --extra cu126
 The plots need matplotlib: `pip install -e ".[vis]"` or
 `uv sync --extra cu126 --extra vis`.
 
-### uDTW
+<!-- ### uDTW
 
 uDTW compares two batches of sequences (for example time series), given
 an uncertainty σ > 0 for every time step, and returns the uDTW distance
@@ -156,14 +156,11 @@ Mean ± std over seeds 42, 43, 44. Cross-view 5-way 1-shot action recognition on
 | sDTW div. | 24.60 ± 3.56 |
 | uDTW | 24.06 ± 8.43 |
 | FVM | 41.15 ± 0.43 |
-| JEANIE | 37.08 ± 2.37 |
+| JEANIE | 37.08 ± 2.37 | -->
 
-## Acknowledgement
+## Acknowledgements
 
-This faster implementation is based on the official uDTW
-(https://github.com/LeiWangR/uDTW) and JEANIE
-(https://github.com/LeiWangR/JEANIE) code by Lei Wang and Piotr
-Koniusz. We thank the authors for releasing their code.
+This faster implementation builds upon the original [uDTW](https://github.com/LeiWangR/uDTW) and [JEANIE](https://github.com/LeiWangR/JEANIE) repositories released by Lei Wang. We thank the authors of both works for their contributions and for making their implementations publicly available.
 
 ## Citation
 
@@ -173,7 +170,7 @@ If you find this project useful for your research, please cite the following ori
 
 ```bibtex
 @inproceedings{wang2022uncertainty,
-  title={Uncertainty-dtw for time series and sequences},
+  title={Uncertainty-DTW for Time Series and Sequences},
   author={Wang, Lei and Koniusz, Piotr},
   booktitle={European Conference on Computer Vision},
   pages={176--195},
@@ -186,7 +183,7 @@ If you find this project useful for your research, please cite the following ori
 
 ```bibtex
 @article{wang2024meet,
-  title={Meet jeanie: a similarity measure for 3d skeleton sequences via temporal-viewpoint alignment},
+  title={Meet {JEANIE}: A Similarity Measure for {3D} Skeleton Sequences via Temporal-Viewpoint Alignment},
   author={Wang, Lei and Liu, Jun and Zheng, Liang and Gedeon, Tom and Koniusz, Piotr},
   journal={International Journal of Computer Vision},
   volume={132},
