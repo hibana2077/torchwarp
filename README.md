@@ -14,26 +14,43 @@ Key features:
   official code on the GPU, see [Speed-up](#speed-up).
 * Plots of the alignment paths of uDTW, soft-DTW, FVM and JEANIE. -->
 
-## Quick start
+## Quick Start
 
 ### Installation
 
-With pip:
+Clone the repository:
 
 ```bash
-git clone https://github.com/hibana2077/torchwarp && cd torchwarp
-pip install -r requirements.txt -e .
+git clone https://github.com/hibana2077/torchwarp.git
+cd torchwarp
 ```
 
-If you perfer using uv (pick `cu126`, `cu128` or `cpu`):
+Install dependencies using either **pip** or **uv**.
+
+**pip:**
 
 ```bash
-git clone https://github.com/hibana2077/torchwarp && cd torchwarp
+pip install -r requirements.txt
+pip install -e .
+```
+
+**uv** (select `cu126`, `cu128`, or `cpu`):
+
+```bash
 uv sync --extra cu126
 ```
 
-The plots need matplotlib: `pip install -e ".[vis]"` or
-`uv sync --extra cu126 --extra vis`.
+**Optional: Visualization**
+
+To generate plots, install the `vis` extra:
+
+```bash
+# pip
+pip install -e ".[vis]"
+
+# uv
+uv sync --extra cu126 --extra vis
+```
 
 <!-- ### uDTW
 
@@ -160,7 +177,7 @@ Mean ± std over seeds 42, 43, 44. Cross-view 5-way 1-shot action recognition on
 
 ## Acknowledgements
 
-This faster implementation builds upon the original [uDTW](https://github.com/LeiWangR/uDTW) and [JEANIE](https://github.com/LeiWangR/JEANIE) repositories released by Lei Wang. We thank the authors of both works for their contributions and for making their implementations publicly available.
+This faster implementation builds upon the original [uDTW](https://github.com/LeiWangR/uDTW) and [JEANIE](https://github.com/LeiWangR/JEANIE) repositories. We thank the original contributors for making their implementations publicly available.
 
 ## Citation
 
