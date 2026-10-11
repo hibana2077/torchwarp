@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "torchwarp"
 version = "0.1.0"
-description = "Unofficial PyTorch/CUDA reimplementation of uDTW and JEANIE."
+description = "Accelerated PyTorch implementation of uDTW and JEANIE with optimized CUDA kernels."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]

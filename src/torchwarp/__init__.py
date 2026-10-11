@@ -1,4 +1,4 @@
-"""torchwarp: unofficial PyTorch/CUDA reimplementation of uDTW and JEANIE.
+"""torchwarp: accelerated PyTorch implementation of uDTW and JEANIE with optimized CUDA kernels.
 
 uncertainty-DTW (uDTW, ECCV 2022) and JEANIE (IJCV 2024) were proposed by
 Lei Wang, Piotr Koniusz et al. The official code is at github.com/LeiWangR.

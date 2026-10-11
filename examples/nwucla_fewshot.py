@@ -240,9 +240,12 @@ def main():
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     ap.add_argument("--out", default=None)
     ap.add_argument("--save-ckpt", default=None, metavar="DIR")
+    ap.add_argument("--max-shift", type=int, default=None, help="JEANIE iota-max shift")
     args = ap.parse_args()
 
     cfg = dict(BASE, **METHODS[args.method])
+    if args.max_shift is not None:
+        cfg["max_shift"] = args.max_shift
     seqs = load_dataset(cfg)
     out = Path(args.out or ROOT / "examples" / "results" / "nwucla_{}.json".format(args.method))
     out.parent.mkdir(parents=True, exist_ok=True)

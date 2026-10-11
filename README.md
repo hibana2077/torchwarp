@@ -1,179 +1,118 @@
 # torchwarp
 
-<!-- ## What is torchwarp
+**torchwarp** is an accelerated PyTorch implementation of [uDTW](https://github.com/LeiWangR/uDTW) and [JEANIE](https://github.com/LeiWangR/JEANIE), providing differentiable sequence alignment with optimized CUDA kernels.
 
-torchwarp is a faster PyTorch version of uncertainty-DTW (uDTW) and JEANIE.
+This repository includes uDTW, JEANIE and FVM, together with examples and benchmarks.
 
-Key features:
+## Features
 
-* uDTW, JEANIE, Free Viewpoint Matching (FVM) and soft-DTW as
-  differentiable PyTorch functions and modules.
-* CUDA kernels on the GPU and a vectorised PyTorch backend on the CPU,
-  with the same values and gradients as the official code.
-* Up to 1345× (uDTW) and 1091× (JEANIE) faster training steps than the
-  official code on the GPU, see [Speed-up](#speed-up).
-* Plots of the alignment paths of uDTW, soft-DTW, FVM and JEANIE. -->
+- **uDTW, JEANIE and FVM:** differentiable alignment, with forward values and gradients validated against the original implementations (see `tests/`).
+- **CUDA acceleration:** up to 963× faster training steps in the NW-UCLA benchmark (see [Results](#results)).
+- **Examples:** few-shot action recognition on NW-UCLA, with optional alignment visualizations.
 
-## Quick Start
+## Installation
 
-### Installation
-
-Clone the repository:
+From the repository root:
 
 ```bash
-git clone https://github.com/hibana2077/torchwarp.git
-cd torchwarp
-```
-
-Install dependencies using either **pip** or **uv**.
-
-**pip:**
-
-```bash
-pip install -r requirements.txt
 pip install -e .
 ```
 
-**uv** (select `cu126`, `cu128`, or `cpu`):
+CUDA acceleration needs a CUDA-enabled PyTorch build and a CUDA toolkit (`nvcc`) of the same major version; without them torchwarp runs on its PyTorch backend. For CUDA-specific PyTorch builds, uv installation, and optional dependencies, see the [installation guide](docs/installation.md).
 
-```bash
-uv sync --extra cu126
-```
+## Minimal Example
 
-**Optional: Visualization**
-
-To generate plots, install the `vis` extra:
-
-```bash
-# pip
-pip install -e ".[vis]"
-
-# uv
-uv sync --extra cu126 --extra vis
-```
-
-<!-- ### uDTW
-
-uDTW compares two batches of sequences (for example time series), given
-an uncertainty σ > 0 for every time step, and returns the uDTW distance
-and the uncertainty penalty Ω of each pair.
-
-```python
-import torch
-import torch.nn as nn
-import torchwarp
-
-# two batches of sequences: [batch, length, features]
-X = torch.randn(16, 30, 8, device="cuda", requires_grad=True)
-Y = torch.randn(16, 40, 8, device="cuda")
-
-# uncertainty sigma per time step: [batch, length, 1], positive
-sigma_net = nn.Sequential(
-    nn.Linear(8, 32),
-    nn.ReLU(),
-    nn.Linear(32, 1),
-    nn.Softplus(),
-).cuda()
-sx = sigma_net(X) + 1e-3
-sy = sigma_net(Y) + 1e-3
-
-# d and omega: [batch], one distance and one penalty per pair
-udtw = torchwarp.uDTW(gamma=1.0, normalize=True)
-d, omega = udtw(X, Y, sx, sy, beta=1.0)
-loss = (d + omega).mean()
-loss.backward()
-```
-
-Plot the sDTW and uDTW paths and the uncertainty Σ on the path:
-
-```python
-from torchwarp import plot
-
-fig = plot.udtw_figure(X[:1], Y[:1], sx[:1], sy[:1], gammas=(0.01, 0.1))
-fig.savefig("udtw_paths.png")
-```
-
-ECG5000, forecast of the trained uDTW model vs. ground truth for one
-test series:
-
-![uDTW paths on ECG5000](assets/udtw_paths_ecg5000.png)
+[TODO: Insert a verified minimal uDTW example.]
 
 ### JEANIE
 
-JEANIE compares a query and a support skeleton sequence over time and
-camera viewpoint. The query is rotated to K simulated viewpoints and
-encoded before it is passed in; JEANIE returns one distance per pair.
-
 ```python
-# query: encoded blocks of the query seen from 5 viewpoints
-# [batch, views, blocks, features]
-query = torch.randn(8, 5, 7, 64, device="cuda", requires_grad=True)
+import torch
+from torchwarp import euclidean_cost, jeanie_1d_from_cost
 
-# support: encoded blocks of the support, [batch, blocks, features]
-support = torch.randn(8, 7, 64, device="cuda")
+device = "cuda" if torch.cuda.is_available() else "cpu"
 
-# dist: [batch]
-jeanie = torchwarp.JEANIE(gamma=0.1, max_shift=1)
-dist = jeanie(query, support)
-dist.sum().backward()
+# query_features:   [K, T, D]
+# support_features: [U, D]
+query_features = torch.randn(5, 7, 64, device=device, requires_grad=True)
+support_features = torch.randn(7, 64, device=device)
+
+cost = euclidean_cost(query_features, support_features)
+
+distance = jeanie_1d_from_cost(
+    cost,
+    gamma=0.1,
+    max_shift=1,
+)
+
+distance.backward()
 ```
 
-Plot the paths of soft-DTW (per view), FVM and JEANIE (one panel per
-`max_shift`):
+where:
 
-```python
-angles = [-60, -30, 0, 30, 60]
-fig = plot.viewpoint_figure(query[0], support[0], angles, max_shift=(1, 2))
-fig.savefig("viewpoint_paths.png")
-```
+- `K` = number of query viewpoints
+- `T` = number of query temporal blocks
+- `U` = number of support temporal blocks
+- `D` = feature dimension
 
-NW-UCLA, a query and a support sequence of the same action (donning):
-
-![soft-DTW, FVM and JEANIE paths on NW-UCLA](assets/viewpoint_paths_nwucla.png)
-
-The two figures use the models trained by the scripts in
-[`examples/`](examples/); `python examples/plot_paths.py` draws them
-again. The [documentation](docs/index.md) covers installation details,
-step-by-step usage, the API reference and the benchmark setups.
+The features are encoded temporal blocks of 3D skeleton sequences; the
+query is rotated to `K` simulated camera viewpoints before encoding.
+`cost` has shape `[K, T, U]`. For a batch, add a leading dimension
+(`[B, K, T, D]`, `[B, U, D]`). See the [usage guide](docs/usage.md) for
+FVM, two viewpoint axes and the `torchwarp.JEANIE` module.
 
 ## Results
 
-Hyperparameters are the defaults in [`examples/`](examples/); run `bash examples/download_data.sh` and then `python examples/ecg5000_forecast.py --setup paper --loss <loss> --seeds $(seq 0 99)` or `python examples/nwucla_fewshot.py --method <method>`.
-
-### Speed-up
-
-Mean time per training step (ms), official implementation vs torchwarp on the same task and settings.
-
-| method (task) | official CPU | torchwarp CPU | speed-up | official GPU | torchwarp GPU | speed-up |
-| --- | --- | --- | --- | --- | --- | --- |
-| uDTW (ECG5000) | 957.6 | 84.6 | 11× | 1809.7 | 1.35 | 1345× |
-| uDTW (NW-UCLA) | 37.5 | 22.0 | 1.7× | 92.2 | 6.18 | 15× |
-| FVM (NW-UCLA) | 157.6 | 5.75 | 27× | 363.9 | 2.93 | 124× |
-| JEANIE (NW-UCLA) | 961.8 | 10.03 | 96× | 2362.3 | 2.17 | 1091× |
-
-### Time series forecasting (ECG5000)
-
-UCR ECG5000: forecast the last 40% of each series from the first 60%, with the uDTW paper's pipeline and training settings (tanh MLP 84 → 30 → 56, N(0, 1) weights, SGD; details in [docs/benchmarks.md](docs/benchmarks.md#time-series-forecasting-ecg5000)). Mean ± std over 100 seeds (0 to 99). Rows: training loss; columns: test metric (lower is better); SSE sums the squared error over the 56 predicted steps. Bold: best, or not significantly worse (Welch t-test, p ≥ 0.05). Diverged runs (non-finite, or test DTW worse than predicting zeros) are left out of the mean.
-
-| training loss | MSE | SSE | DTW | sDTW div. | uDTW | diverged runs |
-| --- | --- | --- | --- | --- | --- | --- |
-| Euclidean | **0.70 ± 0.18** | **39.05 ± 10.01** | **24.12 ± 7.54** | **30.42 ± 10.16** | **9.13 ± 2.72** | 0 |
-| DTW | 1.39 ± 0.10 | 77.98 ± 5.79 | 29.83 ± 2.17 | 46.48 ± 4.17 | 15.75 ± 1.45 | 0 |
-| sDTW | 1.29 ± 0.13 | 72.10 ± 7.12 | **25.52 ± 2.33** | 38.77 ± 4.17 | 13.95 ± 1.49 | 0 |
-| sDTW div. | 1.26 ± 0.17 | 70.37 ± 9.64 | **24.87 ± 3.45** | 36.08 ± 6.07 | 13.11 ± 2.13 | 0 |
-| uDTW | 1.36 ± 0.10 | 76.01 ± 5.61 | 26.55 ± 2.97 | 37.98 ± 3.46 | 14.65 ± 5.81 | 18 |
-
 ### Few-shot action recognition (NW-UCLA)
 
-Mean ± std over seeds 42, 43, 44. Cross-view 5-way 1-shot action recognition on NW-UCLA (train classes 1 to 5, test classes 6, 8, 9, 11, 12; queries from the unseen view 3).
+5-way 1-shot cross-view classification accuracy of torchwarp (mean ± std
+over seeds 42, 43, 44), and mean training-step time in ms (one episode,
+forward and backward) of the original implementations and torchwarp
+under the same settings. Speed-ups are measured on the same device;
+n/a: not benchmarked against an original implementation.
 
-| method | accuracy (%) |
-| --- | --- |
-| sDTW | 24.41 ± 2.47 |
-| sDTW div. | 24.60 ± 3.56 |
-| uDTW | 24.06 ± 8.43 |
-| FVM | 41.15 ± 0.43 |
-| JEANIE | 37.08 ± 2.37 | -->
+| method | accuracy (%) | official CPU | torchwarp CPU | speed-up | official GPU | torchwarp GPU | speed-up |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| sDTW | 24.41 ± 2.47 | n/a | n/a | n/a | n/a | n/a | n/a |
+| sDTW div. | 24.60 ± 3.56 | n/a | n/a | n/a | n/a | n/a | n/a |
+| uDTW | 24.06 ± 8.43 | 40.4 | 21.4 | 1.9× | 86.2 | 7.06 | 12× |
+| FVM | 41.15 ± 0.43 | 163.6 | 5.53 | 30× | 386.8 | 3.75 | 103× |
+| JEANIE (1-max shift) | 38.75 ± 1.91 | 886.1 | 7.40 | 120× | 2116.3 | 2.74 | 774× |
+| JEANIE (2-max shift) | 37.08 ± 2.37 | 1017.6 | 11.17 | 91× | 2197.0 | 2.28 | 963× |
+
+Hardware, software versions, timing method and experimental settings are in [benchmarks](docs/benchmarks.md).
+
+### Time series (ECG5000)
+
+[TODO: uDTW on ECG5000.]
+
+## Examples
+
+To run the NW-UCLA experiments of the table (seeds 42, 43, 44 by default;
+results are written to `examples/results/`):
+
+```bash
+bash examples/download_data.sh
+for m in sdtw sdtw_div udtw fvm; do python examples/nwucla_fewshot.py --method $m; done
+for s in 1 2; do python examples/nwucla_fewshot.py --method jeanie --max-shift $s; done
+```
+
+To draw the soft-DTW, FVM and JEANIE alignment paths for the NW-UCLA
+test split (needs `pip install -e ".[vis]"`):
+
+```bash
+python examples/nwucla_fewshot.py --method jeanie --seeds 42 --save-ckpt examples/results/ckpt
+python examples/plot_jeanie_paths.py
+```
+
+[TODO: ECG5000 with uDTW.]
+
+## Documentation
+
+- [Installation](docs/installation.md): CUDA, uv, and optional dependencies.
+- [Usage](docs/usage.md): step-by-step usage of uDTW, JEANIE, FVM and soft-DTW.
+- [API reference](docs/api.md): arguments, shapes and return values.
+- [Benchmarks](docs/benchmarks.md): experimental setups and results.
 
 ## Acknowledgements
 
@@ -187,7 +126,7 @@ If you find this project useful for your research, please cite the following ori
 
 ```bibtex
 @inproceedings{wang2022uncertainty,
-  title={Uncertainty-DTW for Time Series and Sequences},
+  title={Uncertainty-dtw for time series and sequences},
   author={Wang, Lei and Koniusz, Piotr},
   booktitle={European Conference on Computer Vision},
   pages={176--195},

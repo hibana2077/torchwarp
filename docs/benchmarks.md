@@ -2,18 +2,33 @@
 
 ## Speed-up
 
-Mean time per training step (ms) of the official implementation and of
-torchwarp, on the same task, model and settings. Each entry is the mean
-over 30 training steps after 3 warm-up steps: one step is a batch of 50
-series for ECG5000 and one 5-way 1-shot episode for NW-UCLA, forward and
-backward pass included.
+Mean time per training step (ms) of the original implementations and of
+torchwarp, on the same task, model and settings.
+
+* **Hardware:** NVIDIA TITAN RTX; Intel Core i9-10900K, 10 CPU threads.
+* **Software:** PyTorch 2.14.1 (CUDA 12.6 build), nvcc 12.4.
+* **Timing:** mean over 30 training steps after 3 warm-up steps; one step
+  is one 5-way 1-shot episode for NW-UCLA (a batch of 50 series for
+  ECG5000), forward pass, loss, backward pass and optimizer step
+  included. The GPU is synchronized before and after each step. The
+  warm-up steps also trigger the one-time JIT compilation of the CUDA
+  extensions, so compilation is not included.
+* **Same device:** each speed-up compares the original implementation
+  and torchwarp on the same device (CPU with CPU, GPU with GPU).
+
+The original implementations run the dynamic program as Python loops
+over the cells, with one small tensor operation per cell. On the GPU each
+of these operations is a separate kernel launch, so launch overhead
+dominates and the original code is slower on the GPU than on the CPU.
+torchwarp runs the whole dynamic program in one kernel.
 
 | method (task) | official CPU | torchwarp CPU | speed-up | official GPU | torchwarp GPU | speed-up |
 | --- | --- | --- | --- | --- | --- | --- |
 | uDTW (ECG5000) | 957.6 | 84.6 | 11× | 1809.7 | 1.35 | 1345× |
-| uDTW (NW-UCLA) | 37.5 | 22.0 | 1.7× | 92.2 | 6.18 | 15× |
-| FVM (NW-UCLA) | 157.6 | 5.75 | 27× | 363.9 | 2.93 | 124× |
-| JEANIE (NW-UCLA) | 961.8 | 10.03 | 96× | 2362.3 | 2.17 | 1091× |
+| uDTW (NW-UCLA) | 40.4 | 21.4 | 1.9× | 86.2 | 7.06 | 12× |
+| FVM (NW-UCLA) | 163.6 | 5.53 | 30× | 386.8 | 3.75 | 103× |
+| JEANIE, 1-max shift (NW-UCLA) | 886.1 | 7.40 | 120× | 2116.3 | 2.74 | 774× |
+| JEANIE, 2-max shift (NW-UCLA) | 1017.6 | 11.17 | 91× | 2197.0 | 2.28 | 963× |
 
 Where the speed comes from:
 
@@ -141,7 +156,8 @@ python examples/nwucla_fewshot.py --method sdtw
 python examples/nwucla_fewshot.py --method sdtw_div
 python examples/nwucla_fewshot.py --method udtw
 python examples/nwucla_fewshot.py --method fvm
-python examples/nwucla_fewshot.py --method jeanie
+python examples/nwucla_fewshot.py --method jeanie --max-shift 1
+python examples/nwucla_fewshot.py --method jeanie --max-shift 2
 ```
 
 | method | accuracy (%) |
@@ -150,7 +166,8 @@ python examples/nwucla_fewshot.py --method jeanie
 | sDTW div. | 24.60 ± 3.56 |
 | uDTW | 24.06 ± 8.43 |
 | FVM | 41.15 ± 0.43 |
-| JEANIE | 37.08 ± 2.37 |
+| JEANIE (1-max shift) | 38.75 ± 1.91 |
+| JEANIE (2-max shift) | 37.08 ± 2.37 |
 
 ### Script options
 
