@@ -1,4 +1,4 @@
-"""Plots in the style of the uDTW and JEANIE papers (requires matplotlib).
+"""Plots of the alignment paths of uDTW, soft-DTW, FVM and JEANIE (matplotlib).
 
 * ``alignment`` / ``uncertainty``: paths in white on black, pixels
   power-normalized, and the uncertainty Sigma on the path with its histogram
@@ -6,8 +6,6 @@
 * ``path_3d``: optimal paths in 3D (viewpoint, query time, support time)
   with optional skeletons (JEANIE, Fig. 7).
 * ``udtw_figure`` / ``viewpoint_figure``: the full multi-panel figures.
-
-Install the extra with ``pip install "torchwarp[vis]"``.
 """
 
 import numpy as np
@@ -26,7 +24,7 @@ def _plt():
     try:
         import matplotlib.pyplot as plt
     except ImportError as exc:  # pragma: no cover
-        raise ImportError('torchwarp.plot needs matplotlib: pip install "torchwarp[vis]"') from exc
+        raise ImportError("torchwarp.plot needs matplotlib: pip install matplotlib") from exc
     return plt
 
 

@@ -4,11 +4,10 @@
 
 * Python 3.10 or newer
 * PyTorch 2.5 or newer
-* numpy, ninja
+* numpy, ninja, matplotlib 3.7 or newer
 * For the CUDA kernels: an NVIDIA GPU and a CUDA toolkit (`nvcc`) whose
   major version matches the CUDA version of your PyTorch build. On ROCm
   builds of PyTorch the kernels are hipified automatically.
-* Optional: matplotlib 3.7 or newer for `torchwarp.plot`
 
 Without a GPU or without `nvcc`, torchwarp runs on its PyTorch backend.
 
@@ -36,17 +35,6 @@ uv sync --extra cu126
 
 Without an extra, PyTorch comes from PyPI, which on Linux is a CUDA 13
 build; the kernels then need `nvcc` 13.x.
-
-## Optional extras
-
-| extra | installs | needed for |
-| --- | --- | --- |
-| `vis` | matplotlib | `torchwarp.plot` |
-
-```bash
-pip install -e ".[vis]"
-uv sync --extra cu126 --extra vis
-```
 
 ## The CUDA extensions
 

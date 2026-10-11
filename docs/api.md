@@ -400,8 +400,7 @@ Euclidean distances.
 
 ## `torchwarp.paths`
 
-Paths for visualization and analysis. These functions do not need
-matplotlib.
+Paths for visualization and analysis, as tensors.
 
 ### `Alignment`
 
@@ -478,7 +477,7 @@ Paths with the smallest distance for `D [B, T, U]` (cells `(t, u)`) or
 
 ## `torchwarp.plot`
 
-Needs matplotlib (`pip install -e ".[vis]"`). The panel functions draw
+The panel functions draw
 into a given matplotlib axis (or the current one) and return it; the
 figure functions create and return a `matplotlib.figure.Figure`.
 

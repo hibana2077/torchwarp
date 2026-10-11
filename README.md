@@ -105,7 +105,7 @@ for s in 1 2; do python examples/nwucla_fewshot.py --method jeanie --max-shift $
 ```
 
 To draw the soft-DTW, FVM and JEANIE alignment paths for the NW-UCLA
-test split (needs `pip install -e ".[vis]"`):
+test split:
 
 ```bash
 python examples/nwucla_fewshot.py --method jeanie --seeds 42 --save-ckpt examples/results/ckpt

@@ -5,3 +5,4 @@
 torch>=2.5
 numpy
 ninja
+matplotlib>=3.7

@@ -28,6 +28,7 @@ dependencies = [
     "torch>=2.5",
     "numpy",
     "ninja",     # JIT build of the CUDA extensions
+    "matplotlib>=3.7",
 ]
 
 # Pick the PyTorch build with an extra: `uv sync --extra cu126` (or cu128 / cpu).
@@ -37,7 +38,6 @@ dependencies = [
 cpu = ["torch>=2.5"]
 cu126 = ["torch>=2.5"]
 cu128 = ["torch>=2.5"]
-vis = ["matplotlib>=3.7"]
 
 [dependency-groups]
 dev = ["pytest>=8", "scipy"]

@@ -314,7 +314,7 @@ fig = plot.udtw_figure(X, Y, sx, sy, gammas=(0.01, 0.1))
 fig.savefig("udtw_paths.png")
 ```
 
-The paths are also available without matplotlib:
+The paths are also available as tensors:
 
 ```python
 a = torchwarp.paths.udtw(X, Y, sx, sy, gamma=0.01)
@@ -358,7 +358,7 @@ fig.savefig("viewpoint_paths.png")
 ```
 
 To also draw the skeletons, pass `query_poses`, `support_poses` and
-`bones`. Without matplotlib:
+`bones`. The paths as tensors:
 
 ```python
 a = torchwarp.paths.jeanie(query, support, gamma=0.1, max_shift=1)

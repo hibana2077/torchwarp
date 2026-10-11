@@ -42,7 +42,7 @@ Viewpoint Matching (FVM), and plots of the alignment paths.
 | --- | --- |
 | `torchwarp` | `uDTW`, `JEANIE`, the functional APIs, soft-DTW, FVM and base distances |
 | `torchwarp.paths` | path matrices and optimal paths for visualization |
-| `torchwarp.plot` | matplotlib figures of the paths (needs the `vis` extra) |
+| `torchwarp.plot` | matplotlib figures of the paths |
 
 ## Common behaviour
 
