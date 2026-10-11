@@ -8,23 +8,23 @@ An MLP predicts the last 40% of each series (56 steps) from the first 60%
   * sdtw_div:  soft-DTW divergence sdtw(x,y) - [sdtw(x,x) + sdtw(y,y)] / 2
   * udtw:      d_uDTW + beta * Omega, sigma from a SigmaNet
 
-Two setups:
+Two setups, both with Sigma = 0.5 (sigma^2 + sigma'^2) (Eq. 8):
   * default: ReLU MLP 84 -> 256 -> 56 with PyTorch's default init, Adam,
     and a SigmaNet MLP over the whole sequence.
-  * paper:   the uDTW paper's pipeline (arXiv 2211.00005, App. H.2 / H.5):
-    tanh MLP 84 -> t' -> 56 with every weight drawn from N(0, 1), SGD
-    (lr 1e-3, weight decay 1e-6), a per-timestep SigmaNet
-    sigma_t = kappa * sigmoid(FC(psi_t)) + eta (kappa = 1.5, eta = 0.01) and
-    Sigma = sigma^2 1^T + 1 sigma'^2^T. The paper leaves t', epochs, batch
-    size, gamma and beta unspecified; the values in PAPER_LOSSES were
-    selected on a 400/100 validation split of the training set
+  * paper:   the training settings stated in the uDTW paper (arXiv
+    2211.00005, App. H.2, H.5, I.2): tanh MLP 84 -> t' -> 56 with every
+    weight drawn from N(0, 1), SGD (lr 1e-3, weight decay 1e-6), and a
+    per-frame SigmaNet sigma_t = kappa * sigmoid(FC(psi_t)) + eta
+    (kappa = 1.5, eta = 0.01; one value per frame, as in App. H.2 and the
+    official SimpleSigmaNet). The paper
+    leaves t', epochs, batch size, gamma and beta unspecified; PAPER_LOSSES
+    holds values selected on a 400/100 validation split of the training set
     (examples/tune_ecg5000_paper.py).
 
 Test metrics (float64, lower is better): MSE (per time step), SSE (summed
 over the 56 predicted steps), DTW, sDTW div. (gamma=1) and uDTW (gamma=1,
 beta=1, normalize=True). The uDTW metric takes sigma from one fixed
-evaluation SigmaNet (a uDTW run with seed EVAL_SEED and the EVAL_SIGMA
-configuration of the setup), shared by every model.
+evaluation SigmaNet (a uDTW run with seed EVAL_SEED), shared by every model.
 
 Usage:
   python examples/ecg5000_forecast.py --loss udtw
@@ -34,7 +34,6 @@ Usage:
 import argparse
 import copy
 import json
-import math
 import time
 from pathlib import Path
 
@@ -51,8 +50,7 @@ RESULTS = ROOT / "examples" / "results"
 
 BASE = dict(
     input_len=84, output_len=56, hidden=256, act="relu", init="default",
-    sigmanet="mlp", sigma_hidden=64, sigma_a=1.5, sigma_b=0.5,   # sigma = a * sigmoid(.) + b
-    sigma_sum=False,                                             # Sigma = 0.5 (s^2 + s'^2)
+    sigma_hidden=64, sigma_a=1.5, sigma_b=0.5,                   # sigma = a * sigmoid(.) + b
     gamma=1.0, beta=1.0, normalize=True,
     optimizer="adam", lr=1e-3, weight_decay=0.0, batch_size=50, epochs=100,
 )
@@ -65,25 +63,18 @@ LOSSES = {
 }
 PAPER_BASE = dict(
     input_len=84, output_len=56, hidden=50, act="tanh", init="normal",
-    sigmanet="point", sigma_a=1.5, sigma_b=0.01,                 # kappa, eta (App. I.2)
-    sigma_sum=True,                                              # Sigma = s^2 + s'^2
+    sigmanet="frame", sigma_a=1.5, sigma_b=0.01,                 # kappa, eta (App. I.2)
     gamma=1.0, beta=1.0, normalize=False,
     optimizer="sgd", lr=1e-3, weight_decay=1e-6, batch_size=1, epochs=100,
-    clip=0.0,                                                    # max grad norm, 0 = off
 )
 PAPER_LOSSES = {                                    # tune_ecg5000_paper.py select
     "euclidean": dict(hidden=30, batch_size=1, epochs=50),
     "dtw": dict(hidden=30, batch_size=10, epochs=100),
     "sdtw": dict(hidden=30, batch_size=1, epochs=50, gamma=0.1),
     "sdtw_div": dict(hidden=30, batch_size=1, epochs=100, gamma=0.1),
-    "udtw": dict(hidden=30, batch_size=1, epochs=100, gamma=1.0, beta=0.1,
-                 sigma_a=3.0, sigma_b=0.5),
+    "udtw": dict(hidden=30, batch_size=1, epochs=100, gamma=0.1, beta=0.1),
 }
 SETUPS = {"default": (BASE, LOSSES), "paper": (PAPER_BASE, PAPER_LOSSES)}
-# SigmaNet of the uDTW test metric, kept fixed so that metric does not change
-# when the uDTW training configuration does.
-EVAL_SIGMA = {"default": BASE,
-              "paper": dict(PAPER_BASE, hidden=30, batch_size=1, epochs=100, gamma=0.1, beta=0.1)}
 EVAL_SEED = 100
 
 
@@ -132,8 +123,9 @@ class SigmaNet(nn.Module):
         return self.a * torch.sigmoid(self.net(z)) + self.b
 
 
-class PointSigmaNet(nn.Module):
-    """Paper SigmaNet (App. H.2, Eq. 25): sigma_t = kappa * sigmoid(FC(psi_t)) + eta."""
+class FrameSigmaNet(nn.Module):
+    """Per-frame SigmaNet (App. H.2, Eq. 25): sigma_t = kappa * sigmoid(FC(psi_t)) + eta,
+    FC from the frame feature (1-D here) to a scalar."""
 
     def __init__(self, cfg):
         super().__init__()
@@ -146,18 +138,11 @@ class PointSigmaNet(nn.Module):
 
 def make_models(cfg):
     f = Forecaster(cfg)
-    sigma = PointSigmaNet(cfg) if cfg.get("sigmanet") == "point" else SigmaNet(cfg)
+    sigma = FrameSigmaNet(cfg) if cfg.get("sigmanet") == "frame" else SigmaNet(cfg)
     if cfg.get("init") == "normal":                      # App. H.5: weights ~ N(0, 1)
         for p in list(f.parameters()) + list(sigma.parameters()):
             nn.init.normal_(p, 0.0, 1.0)
     return f, sigma
-
-
-def udtw_sigmas(sigma, z, cfg):
-    """[B, L, 1] standard deviations for torchwarp.uDTW, which uses
-    Sigma = 0.5 (s^2 + s'^2); scaling by sqrt(2) gives Sigma = s^2 + s'^2."""
-    s = sigma(z).unsqueeze(-1)
-    return s * math.sqrt(2.0) if cfg.get("sigma_sum") else s
 
 
 def hard_dtw_loss(a, b):
@@ -202,7 +187,7 @@ def make_loss(name, cfg):
 
     def loss(pred, y, sigma):
         d, p = crit(pred.unsqueeze(-1), y.unsqueeze(-1),
-                    udtw_sigmas(sigma, pred, cfg), udtw_sigmas(sigma, y, cfg), beta=cfg["beta"])
+                    sigma(pred).unsqueeze(-1), sigma(y).unsqueeze(-1), beta=cfg["beta"])
         return (d + p).mean()
     return loss
 
@@ -233,8 +218,6 @@ def train_one(name, cfg, seed, train, device, on_epoch=None):
             loss = crit(f(x), y, sigma)
             opt.zero_grad(set_to_none=True)
             loss.backward()
-            if cfg.get("clip"):
-                nn.utils.clip_grad_norm_(params, cfg["clip"])
             opt.step()
             if device == "cuda":
                 torch.cuda.synchronize()
@@ -262,7 +245,7 @@ def hard_dtw(a, b):
 
 def eval_sigmanet(setup, train, device):
     """The fixed SigmaNet of the uDTW test metric (trained once, then cached)."""
-    cfg = EVAL_SIGMA[setup]
+    cfg = BASE if setup == "default" else config(setup, "udtw")
     suffix = "" if setup == "default" else "_" + setup
     path = RESULTS / "ecg5000_eval_sigmanet{}_seed{}.pt".format(suffix, EVAL_SEED)
     _, sigma = make_models(cfg)
@@ -272,11 +255,11 @@ def eval_sigmanet(setup, train, device):
         _, sigma, _ = train_one("udtw", cfg, EVAL_SEED, train, device)
         path.parent.mkdir(parents=True, exist_ok=True)
         torch.save(sigma.state_dict(), path)
-    return sigma.double().eval(), cfg
+    return sigma.double().eval()
 
 
 def evaluate(f, sigma_eval, test, cfg):
-    """Test metrics; sigma_eval = (SigmaNet, its config) or None to skip uDTW."""
+    """Test metrics; sigma_eval = the evaluation SigmaNet, or None to skip uDTW."""
     metric = uDTW(gamma=1.0, normalize=True, backend="torch")
     x = test[:, :cfg["input_len"]].double()
     y = test[:, cfg["input_len"]:].double()
@@ -293,8 +276,7 @@ def evaluate(f, sigma_eval, test, cfg):
             sdtw_div=float(sdtw_div.mean()),
         )
         if sigma_eval is not None:
-            sigma, scfg = sigma_eval
-            d, pen = metric(p3, y3, udtw_sigmas(sigma, pred, scfg), udtw_sigmas(sigma, y, scfg),
+            d, pen = metric(p3, y3, sigma_eval(pred).unsqueeze(-1), sigma_eval(y).unsqueeze(-1),
                             beta=1.0)
             out["udtw"] = float((d + pen).mean())
         return out

@@ -63,15 +63,16 @@ predicts the last 40% of each series (56 steps) from the first 60% (84
 steps). Models are trained on the 500 training series and evaluated on
 the 4500 test series.
 
-The pipeline and training settings follow the uDTW paper
+The training settings stated in the uDTW paper
 ([arXiv 2211.00005](https://arxiv.org/abs/2211.00005), App. H.2, H.5
-and I.2), `--setup paper`:
+and I.2) are available as `--setup paper`:
 
 * MLP 84 → t′ → 56 with a tanh in between; every weight, bias included,
   drawn from N(0, 1).
 * SGD, learning rate 1e-3, weight decay 1e-6.
-* SigmaNet: σ_t = κ · sigmoid(FC(ψ_t)) + η per time step, κ = 1.5,
-  η = 0.01, and Σ = σ²1ᵀ + 1σ′²ᵀ.
+* Per-frame SigmaNet σ_t = κ · sigmoid(FC(ψ_t)) + η with κ = 1.5 and
+  η = 0.01 (one value per frame, as in App. H.2 and the official
+  `SimpleSigmaNet`), and Σ = 0.5 (σ² + σ′²) (Eq. 8).
 * Training losses (squared Euclidean base distance): Euclidean, DTW,
   soft-DTW, soft-DTW divergence and uDTW (d_uDTW + β Ω, without
   normalisation).
@@ -84,22 +85,14 @@ is not used): t′ ∈ {30, 50}, batch size ∈ {1, 10, 50}, epochs ∈ {30, 50,
 100}, γ ∈ {0.01, 0.1, 1}, β ∈ {0.01, 0.1, 1}, two seeds per point.
 Euclidean is selected by validation MSE and the alignment losses by
 validation DTW; grid points where a seed diverged are skipped. The
-selected values are `PAPER_LOSSES` in
-[`examples/ecg5000_forecast.py`](../examples/ecg5000_forecast.py):
-
-| training loss | t′ | batch size | epochs | γ | β |
-| --- | --- | --- | --- | --- | --- |
-| Euclidean | 30 | 1 | 50 | | |
-| DTW | 30 | 10 | 100 | | |
-| sDTW | 30 | 1 | 50 | 0.1 | |
-| sDTW div. | 30 | 1 | 100 | 0.1 | |
-| uDTW | 30 | 1 | 100 | 0.1 | 0.1 |
+selected values go into `PAPER_LOSSES` in
+[`examples/ecg5000_forecast.py`](../examples/ecg5000_forecast.py).
 
 Test metrics (float64, lower is better): MSE (per time step), SSE
 (summed over the 56 predicted steps), DTW, soft-DTW divergence (γ = 1)
 and uDTW (γ = 1, β = 1, `normalize=True`). The uDTW metric takes σ from
-one fixed SigmaNet trained with the uDTW setting above (seed 100), shared
-by all models.
+one fixed SigmaNet trained with the uDTW setting (seed 100), shared by
+all models.
 
 ```bash
 python examples/tune_ecg5000_paper.py count            # 204 grid runs
@@ -112,24 +105,6 @@ python examples/ecg5000_forecast.py --setup paper --loss sdtw --seeds $(seq 0 99
 python examples/ecg5000_forecast.py --setup paper --loss sdtw_div --seeds $(seq 0 99)
 python examples/ecg5000_forecast.py --setup paper --loss udtw --seeds $(seq 0 99)
 ```
-
-Mean ± std over seeds 0 to 99. Rows: training loss; columns: test
-metric. Bold: best, or not significantly worse (Welch t-test,
-p ≥ 0.05). A run counts as diverged if a metric is non-finite or its
-test DTW is worse than predicting zeros (64.15); diverged runs are left
-out of the mean. Of the 18 diverged uDTW runs, 14 ended in NaN and 4
-reached a test DTW of 226 to 1288.
-
-| training loss | MSE | SSE | DTW | sDTW div. | uDTW | diverged runs |
-| --- | --- | --- | --- | --- | --- | --- |
-| Euclidean | **0.70 ± 0.18** | **39.05 ± 10.01** | **24.12 ± 7.54** | **30.42 ± 10.16** | **9.13 ± 2.72** | 0 |
-| DTW | 1.39 ± 0.10 | 77.98 ± 5.79 | 29.83 ± 2.17 | 46.48 ± 4.17 | 15.75 ± 1.45 | 0 |
-| sDTW | 1.29 ± 0.13 | 72.10 ± 7.12 | **25.52 ± 2.33** | 38.77 ± 4.17 | 13.95 ± 1.49 | 0 |
-| sDTW div. | 1.26 ± 0.17 | 70.37 ± 9.64 | **24.87 ± 3.45** | 36.08 ± 6.07 | 13.11 ± 2.13 | 0 |
-| uDTW | 1.36 ± 0.10 | 76.01 ± 5.61 | 26.55 ± 2.97 | 37.98 ± 3.46 | 14.65 ± 5.81 | 18 |
-
-With batch size 1 these runs take 0.1 (Euclidean) to 42 (sDTW div.)
-minutes each on one CPU core; the GPU does not help at this size.
 
 The previous default setting (ReLU MLP 84 → 256 → 56, PyTorch's default
 init, Adam) is still available as `--setup default`.

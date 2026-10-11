@@ -10,9 +10,6 @@ search on a fixed 400/100 split of the training set:
   epochs       {30, 50, 100}        (one run, evaluated after each)
   gamma        {0.01, 0.1, 1}       (sdtw, sdtw_div, udtw)
   beta         {0.01, 0.1, 1}       (udtw)
-  grad clip    {off, max norm 10}   (all losses)
-  kappa, eta   {1.5, 3} x {0.01, 0.1, 0.5}   (udtw SigmaNet; the paper's 1.5 and
-                                    0.01 were chosen for action recognition)
   seeds        {0, 1}
 
 Selection: Euclidean by validation MSE, every alignment loss by validation
@@ -38,8 +35,6 @@ OUT = ROOT / "examples" / "results" / "tune_paper"
 
 HIDDEN, BATCH, EPOCHS = [30, 50], [1, 10, 50], [30, 50, 100]
 GAMMA, BETA, SEEDS = [0.01, 0.1, 1.0], [0.01, 0.1, 1.0], [0, 1]
-CLIP, KAPPA, ETA = [0.0, 10.0], [1.5, 3.0], [0.01, 0.1, 0.5]
-DEFAULT = dict(clip=0.0, sigma_a=1.5, sigma_b=0.01)       # PAPER_BASE values
 SELECT_BY = dict(euclidean="mse", dtw="dtw", sdtw="dtw", sdtw_div="dtw", udtw="dtw")
 
 
@@ -48,14 +43,12 @@ def grid():
     for loss in ["euclidean", "dtw", "sdtw", "sdtw_div", "udtw"]:
         gammas = GAMMA if loss in ("sdtw", "sdtw_div", "udtw") else [None]
         betas = BETA if loss == "udtw" else [None]
-        sigmas = itertools.product(KAPPA, ETA) if loss == "udtw" else [(None, None)]
-        for (k, e), clip, h, bs, g, b, seed in itertools.product(
-                list(sigmas), CLIP, HIDDEN, BATCH, gammas, betas, SEEDS):
+        for h, bs, g, b, seed in itertools.product(HIDDEN, BATCH, gammas, betas, SEEDS):
             cfg = dict(hidden=h, batch_size=bs, epochs=max(EPOCHS))
-            extra = dict(gamma=g, beta=b, clip=clip, sigma_a=k, sigma_b=e)
-            # values equal to PAPER_BASE are left out, so file names stay stable
-            cfg.update({key: v for key, v in extra.items()
-                        if v is not None and DEFAULT.get(key) != v})
+            if g is not None:
+                cfg["gamma"] = g
+            if b is not None:
+                cfg["beta"] = b
             tasks.append((loss, cfg, seed))
     # most expensive first, so the long jobs start early
     cost = dict(euclidean=1, dtw=2, sdtw=3, sdtw_div=7, udtw=5)
@@ -88,9 +81,8 @@ def select():
         r = res["runs"][0]
         keys = ["hidden", "batch_size"]
         keys += ["gamma"] if res["loss"] in ("sdtw", "sdtw_div", "udtw") else []
-        keys += ["beta", "sigma_a", "sigma_b"] if res["loss"] == "udtw" else []
+        keys += ["beta"] if res["loss"] == "udtw" else []
         base = {k: res["config"][k] for k in keys}
-        base["clip"] = res["config"].get("clip", DEFAULT["clip"])
         for ep in EPOCHS:
             m = r if ep == res["config"]["epochs"] else r["at_epoch"][str(ep)]
             key = (res["loss"], json.dumps(dict(base, epochs=ep), sort_keys=True))
