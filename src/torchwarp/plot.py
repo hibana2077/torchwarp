@@ -83,17 +83,20 @@ def uncertainty(a, index=0, ax=None, power=0.1, threshold=0.6, hist=True, title=
     ax.set_yticks([])
     ax.set_box_aspect(1)
     if hist:
-        ax.add_patch(plt.Rectangle((0.44, 0.52), 0.56, 0.48, transform=ax.transAxes,
+        ax.add_patch(plt.Rectangle((0.51, 0.63), 0.49, 0.37, transform=ax.transAxes,
                                    facecolor="white", edgecolor="none"))
-        ins = ax.inset_axes([0.56, 0.64, 0.42, 0.34])
+        ins = ax.inset_axes([0.565, 0.69, 0.405, 0.3])
         ins.set_facecolor("#f7f7f7")
-        ins.grid(True, color="#d0d0d0", linewidth=0.4)
-        ins.set_axisbelow(True)
         ins.hist(on_path, bins=5, color="red", rwidth=0.9)
-        ins.set_ylabel("Counts", fontsize=6, labelpad=1)
-        ins.tick_params(labelsize=5, length=1.5, pad=1)
+        ins.set_ylabel("Counts", fontsize=5, labelpad=0.5)
+        ins.tick_params(labelsize=4.5, length=1, pad=0.5)
         ins.set_yticklabels([])
         ins.xaxis.set_major_locator(_ticker().MaxNLocator(4))
+        ins.xaxis.set_minor_locator(_ticker().AutoMinorLocator(2))
+        ins.yaxis.set_major_locator(_ticker().MaxNLocator(6))
+        ins.tick_params(which="minor", length=0)
+        ins.grid(True, which="both", color="#c8c8c8", linewidth=0.3)
+        ins.set_axisbelow(True)
         for side in ("top", "right"):
             ins.spines[side].set_visible(False)
         for side in ("left", "bottom"):
