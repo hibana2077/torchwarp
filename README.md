@@ -91,7 +91,24 @@ Hardware, software versions, timing method and experimental settings are in [ben
 
 ### Time series (ECG5000)
 
-[TODO: uDTW on ECG5000.]
+ECG5000 forecasting: predict the last 40% of each series from the
+first 60%, test metrics of the MLP trained with each loss (mean ± std
+over seeds 42, 43, 44; lower is better). soft-DTW and soft-DTW divergence
+use γ = 0.001; the uDTW hyperparameters were selected on a validation
+split of the training set
+([`tune_ecg5000_udtw.py`](examples/tune_ecg5000_udtw.py)). Training-step
+time in ms (a batch of 50 series, forward and backward) of the original
+implementation and torchwarp, on the same device
+([`speed_ecg5000.py`](examples/speed_ecg5000.py)); n/a: not benchmarked
+against an original implementation.
+
+| loss | MSE | DTW | sDTW div. | uDTW | official CPU | torchwarp CPU | speed-up | official GPU | torchwarp GPU | speed-up |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Euclidean | 0.2161 ± 0.0065 | 5.5127 ± 0.3189 | 7.8376 ± 0.3005 | 2.5342 ± 0.0911 | n/a | n/a | n/a | n/a | n/a | n/a |
+| DTW | 0.7299 ± 0.1767 | 5.3317 ± 0.4190 | 19.0465 ± 3.5771 | 9.3703 ± 2.7353 | n/a | n/a | n/a | n/a | n/a | n/a |
+| sDTW | 0.7265 ± 0.1751 | 5.3920 ± 0.4921 | 18.9393 ± 3.6078 | 9.2567 ± 2.6598 | n/a | n/a | n/a | n/a | n/a | n/a |
+| sDTW div. | 0.7248 ± 0.1845 | 5.3684 ± 0.5537 | 19.0471 ± 3.7483 | 9.2619 ± 2.7557 | n/a | n/a | n/a | n/a | n/a | n/a |
+| uDTW | 0.4003 ± 0.0742 | 5.2258 ± 0.3640 | 8.1221 ± 0.6425 | 3.2134 ± 0.3950 | 1006.9 | 88.6 | 11× | 1856.0 | 2.18 | 852× |
 
 ## Examples
 
@@ -112,7 +129,14 @@ python examples/nwucla_fewshot.py --method jeanie --seeds 42 --save-ckpt example
 python examples/plot_jeanie_paths.py
 ```
 
-[TODO: ECG5000 with uDTW.]
+To run the ECG5000 experiments of the table, the uDTW validation search
+and the timing:
+
+```bash
+for l in euclidean dtw sdtw sdtw_div udtw; do python examples/ecg5000_forecast.py --loss $l; done
+python examples/tune_ecg5000_udtw.py run && python examples/tune_ecg5000_udtw.py select
+python examples/speed_ecg5000.py
+```
 
 ## Documentation
 

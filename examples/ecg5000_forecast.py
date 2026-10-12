@@ -59,7 +59,8 @@ LOSSES = {
     "dtw": {},
     "sdtw": dict(gamma=0.001),
     "sdtw_div": dict(gamma=0.001),
-    "udtw": dict(gamma=1.0, beta=1.0, sigma_a=2.0, sigma_b=0.1, lr=3e-3),
+    "udtw": dict(gamma=0.1, beta=0.01, sigma_a=2.0, sigma_b=0.1, lr=1e-3,     # tune_ecg5000_udtw.py
+                 normalize=False),
 }
 PAPER_BASE = dict(
     input_len=84, output_len=56, hidden=50, act="tanh", init="normal",
@@ -72,7 +73,7 @@ PAPER_LOSSES = {                                    # tune_ecg5000_paper.py sele
     "dtw": dict(hidden=30, batch_size=10, epochs=100),
     "sdtw": dict(hidden=30, batch_size=1, epochs=50, gamma=0.1),
     "sdtw_div": dict(hidden=30, batch_size=1, epochs=100, gamma=0.1),
-    "udtw": dict(hidden=30, batch_size=1, epochs=100, gamma=0.1, beta=0.1),
+    "udtw": dict(hidden=50, batch_size=1, epochs=100, gamma=0.01, beta=0.1),
 }
 SETUPS = {"default": (BASE, LOSSES), "paper": (PAPER_BASE, PAPER_LOSSES)}
 EVAL_SEED = 100

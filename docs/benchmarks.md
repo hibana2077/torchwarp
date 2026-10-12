@@ -24,7 +24,7 @@ torchwarp runs the whole dynamic program in one kernel.
 
 | method (task) | official CPU | torchwarp CPU | speed-up | official GPU | torchwarp GPU | speed-up |
 | --- | --- | --- | --- | --- | --- | --- |
-| uDTW (ECG5000) | 957.6 | 84.6 | 11× | 1809.7 | 1.35 | 1345× |
+| uDTW (ECG5000) | 1006.9 | 88.6 | 11× | 1856.0 | 2.18 | 852× |
 | uDTW (NW-UCLA) | 40.4 | 21.4 | 1.9× | 86.2 | 7.06 | 12× |
 | FVM (NW-UCLA) | 163.6 | 5.53 | 30× | 386.8 | 3.75 | 103× |
 | JEANIE, 1-max shift (NW-UCLA) | 886.1 | 7.40 | 120× | 2116.3 | 2.74 | 774× |
