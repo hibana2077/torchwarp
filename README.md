@@ -22,7 +22,39 @@ CUDA acceleration needs a CUDA-enabled PyTorch build and a CUDA toolkit (`nvcc`)
 
 ## Minimal Example
 
-[TODO: Insert a verified minimal uDTW example.]
+### uDTW
+
+```python
+import torch
+from torchwarp import uDTW
+
+device = "cuda" if torch.cuda.is_available() else "cpu"
+
+# X: [B, N, D],  sigma_x: [B, N, 1]
+# Y: [B, M, D],  sigma_y: [B, M, 1]
+X = torch.randn(4, 30, 8, device=device, requires_grad=True)
+Y = torch.randn(4, 40, 8, device=device)
+sigma_x = torch.rand(4, 30, 1, device=device) + 0.5
+sigma_y = torch.rand(4, 40, 1, device=device) + 0.5
+
+udtw = uDTW(gamma=1.0)
+d, omega = udtw(X, Y, sigma_x, sigma_y, beta=1.0)
+
+(d + omega).mean().backward()
+```
+
+where:
+
+- `B` = number of sequence pairs
+- `N`, `M` = lengths of the two sequences
+- `D` = feature dimension
+
+`sigma_x` and `sigma_y` are the uncertainties σ > 0 of each time step; in
+practice they are predicted from the features by a small network
+(SigmaNet in the paper). `d` is the uDTW distance and `omega` the
+uncertainty penalty β Ω, one value per pair (shape `[B]`); the training
+loss adds the two. For `normalize=True`, custom base distances and
+`torchwarp.udtw_from_matrices`, see the [usage guide](docs/usage.md).
 
 ### JEANIE and FVM
 
