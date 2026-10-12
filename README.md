@@ -64,22 +64,37 @@ viewpoint axes, see the [usage guide](docs/usage.md).
 
 ## Results
 
-### Few-shot action recognition (NW-UCLA)
+### Performance
 
-5-way 1-shot cross-view classification accuracy of torchwarp (mean ± std
-over seeds 42, 43, 44), and mean training-step time in ms (one episode,
-forward and backward) of the original implementations and torchwarp
-under the same settings. Speed-ups are measured on the same device;
-n/a: not benchmarked against an original implementation.
+#### Time series forecasting (ECG5000)
 
-| method | accuracy (%) | official CPU | torchwarp CPU | speed-up | official GPU | torchwarp GPU | speed-up |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| sDTW | 24.41 ± 2.47 | n/a | n/a | n/a | n/a | n/a | n/a |
-| sDTW div. | 24.60 ± 3.56 | n/a | n/a | n/a | n/a | n/a | n/a |
-| uDTW | 24.06 ± 8.43 | 40.4 | 21.4 | 1.9× | 86.2 | 7.06 | 12× |
-| FVM | 41.15 ± 0.43 | 163.6 | 5.53 | 30× | 386.8 | 3.75 | 103× |
-| JEANIE (1-max shift) | 38.75 ± 1.91 | 886.1 | 7.40 | 120× | 2116.3 | 2.74 | 774× |
-| JEANIE (2-max shift) | 37.08 ± 2.37 | 1017.6 | 11.17 | 91× | 2197.0 | 2.28 | 963× |
+Predict the last 40% of each series from the first 60%; test metrics of
+the MLP trained with each loss (mean ± std over seeds 42, 43, 44; lower is
+better). soft-DTW and soft-DTW divergence use γ = 0.001; the uDTW
+hyperparameters were selected on a validation split of the training set
+([`tune_ecg5000_udtw.py`](examples/tune_ecg5000_udtw.py)).
+
+| loss | MSE | DTW | sDTW div. | uDTW |
+| --- | --- | --- | --- | --- |
+| Euclidean | 0.2161 ± 0.0065 | 5.5127 ± 0.3189 | 7.8376 ± 0.3005 | 2.5342 ± 0.0911 |
+| DTW | 0.7299 ± 0.1767 | 5.3317 ± 0.4190 | 19.0465 ± 3.5771 | 9.3703 ± 2.7353 |
+| sDTW | 0.7265 ± 0.1751 | 5.3920 ± 0.4921 | 18.9393 ± 3.6078 | 9.2567 ± 2.6598 |
+| sDTW div. | 0.7248 ± 0.1845 | 5.3684 ± 0.5537 | 19.0471 ± 3.7483 | 9.2619 ± 2.7557 |
+| uDTW | 0.4003 ± 0.0742 | 5.2258 ± 0.3640 | 8.1221 ± 0.6425 | 3.2134 ± 0.3950 |
+
+#### Few-shot action recognition (NW-UCLA)
+
+5-way 1-shot cross-view classification accuracy (mean ± std over seeds
+42, 43, 44).
+
+| method | accuracy (%) |
+| --- | --- |
+| sDTW | 24.41 ± 2.47 |
+| sDTW div. | 24.60 ± 3.56 |
+| uDTW | 24.06 ± 8.43 |
+| FVM | 41.15 ± 0.43 |
+| JEANIE (1-max shift) | 38.75 ± 1.91 |
+| JEANIE (2-max shift) | 37.08 ± 2.37 |
 
 Alignment paths of soft-DTW (per viewpoint), FVM and JEANIE for a query
 (view 3) and a support (view 1) of the action donning, with the trained
@@ -87,28 +102,22 @@ JEANIE encoder (seed 42):
 
 ![soft-DTW, FVM and JEANIE paths on NW-UCLA](assets/viewpoint_paths_nwucla.png)
 
+### Speed-up
+
+Mean training-step time in ms (forward and backward; one 5-way 1-shot
+episode for NW-UCLA, a batch of 50 series for ECG5000) of the original
+implementations and torchwarp under the same settings. Speed-ups compare
+the two on the same device.
+
+| method | task | official CPU | torchwarp CPU | speed-up | official GPU | torchwarp GPU | speed-up |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| JEANIE (1-max shift) | NW-UCLA | 886.1 | 7.40 | 120× | 2116.3 | 2.74 | 774× |
+| JEANIE (2-max shift) | NW-UCLA | 1017.6 | 11.17 | 91× | 2197.0 | 2.28 | 963× |
+| FVM | NW-UCLA | 163.6 | 5.53 | 30× | 386.8 | 3.75 | 103× |
+| uDTW | NW-UCLA | 40.4 | 21.4 | 1.9× | 86.2 | 7.06 | 12× |
+| uDTW | ECG5000 | 1006.9 | 88.6 | 11× | 1856.0 | 2.18 | 852× |
+
 Hardware, software versions, timing method and experimental settings are in [benchmarks](docs/benchmarks.md).
-
-### Time series (ECG5000)
-
-ECG5000 forecasting: predict the last 40% of each series from the
-first 60%, test metrics of the MLP trained with each loss (mean ± std
-over seeds 42, 43, 44; lower is better). soft-DTW and soft-DTW divergence
-use γ = 0.001; the uDTW hyperparameters were selected on a validation
-split of the training set
-([`tune_ecg5000_udtw.py`](examples/tune_ecg5000_udtw.py)). Training-step
-time in ms (a batch of 50 series, forward and backward) of the original
-implementation and torchwarp, on the same device
-([`speed_ecg5000.py`](examples/speed_ecg5000.py)); n/a: not benchmarked
-against an original implementation.
-
-| loss | MSE | DTW | sDTW div. | uDTW | official CPU | torchwarp CPU | speed-up | official GPU | torchwarp GPU | speed-up |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Euclidean | 0.2161 ± 0.0065 | 5.5127 ± 0.3189 | 7.8376 ± 0.3005 | 2.5342 ± 0.0911 | n/a | n/a | n/a | n/a | n/a | n/a |
-| DTW | 0.7299 ± 0.1767 | 5.3317 ± 0.4190 | 19.0465 ± 3.5771 | 9.3703 ± 2.7353 | n/a | n/a | n/a | n/a | n/a | n/a |
-| sDTW | 0.7265 ± 0.1751 | 5.3920 ± 0.4921 | 18.9393 ± 3.6078 | 9.2567 ± 2.6598 | n/a | n/a | n/a | n/a | n/a | n/a |
-| sDTW div. | 0.7248 ± 0.1845 | 5.3684 ± 0.5537 | 19.0471 ± 3.7483 | 9.2619 ± 2.7557 | n/a | n/a | n/a | n/a | n/a | n/a |
-| uDTW | 0.4003 ± 0.0742 | 5.2258 ± 0.3640 | 8.1221 ± 0.6425 | 3.2134 ± 0.3950 | 1006.9 | 88.6 | 11× | 1856.0 | 2.18 | 852× |
 
 ## Examples
 
