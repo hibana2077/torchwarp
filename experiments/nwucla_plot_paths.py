@@ -1,17 +1,17 @@
 """Path figures of soft-DTW, FVM and JEANIE on the NW-UCLA test split.
 
 Train and save the JEANIE encoder first:
-  python examples/nwucla_fewshot.py --method jeanie --seeds 42 --save-ckpt examples/results/ckpt
+  python experiments/nwucla_fewshot.py --method jeanie --seeds 42 --save-ckpt experiments/results/ckpt
 
 Every test query (classes 6, 8, 9, 11, 12, view 3) is compared with one
 support sequence of the same action from views 1 and 2: by default a
 random one (--support random, fixed --seed), or the one with the smallest
 JEANIE distance (--support nearest). One figure is written per query, plus index.csv
 with the distances shown in the figures:
-  python examples/plot_jeanie_paths.py
+  python experiments/nwucla_plot_paths.py
 
 One pair only (the README figure is --query 970 --support 1005):
-  python examples/plot_jeanie_paths.py --query 970 --support 1005 --out assets
+  python experiments/nwucla_plot_paths.py --query 970 --support 1005 --out assets
 """
 
 import argparse
@@ -25,9 +25,10 @@ import torch
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-import nwucla_fewshot as nw
 import torchwarp
 from torchwarp import paths, plot
+
+import nwucla_fewshot as nw
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -98,8 +99,8 @@ def draw(data, q, s, path, gamma, shifts):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--ckpt", default=str(ROOT / "examples/results/ckpt/nwucla_jeanie_seed42.pt"))
-    ap.add_argument("--out", default=str(ROOT / "examples/results/figures/nwucla"))
+    ap.add_argument("--ckpt", default=str(ROOT / "experiments/results/ckpt/nwucla_jeanie_seed42.pt"))
+    ap.add_argument("--out", default=str(ROOT / "experiments/results/figures/nwucla"))
     ap.add_argument("--query", type=int, default=None, help="dataset index of one query")
     ap.add_argument("--support", default="random",
                     help="'random', 'nearest', or the dataset index of one support")

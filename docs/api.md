@@ -15,12 +15,12 @@ All functions are differentiable. `backend` is always one of `"auto"`,
 
 Contents:
 
-* uDTW: [`uDTW`](#udtw), [`udtw_from_features`](#udtw_from_features), [`udtw_from_matrices`](#udtw_from_matrices), [`pairwise_matrices`](#pairwise_matrices), [`squared_euclidean`](#squared_euclidean)
-* JEANIE: [`JEANIE`](#jeanie), [`jeanie_1d_from_features`](#jeanie_1d_from_features), [`jeanie_1d_from_cost`](#jeanie_1d_from_cost), [`jeanie_2d_from_features`](#jeanie_2d_from_features), [`jeanie_2d_from_cost`](#jeanie_2d_from_cost), [`jeanie_dp_features`](#jeanie_dp_features), [`jeanie_dp`](#jeanie_dp)
+* uDTW: [`UDTW`](#udtw), [`udtw_from_features`](#udtw_from_features), [`udtw_from_cost`](#udtw_from_cost), [`pairwise_matrices`](#pairwise_matrices)
+* JEANIE: [`JEANIE`](#jeanie), [`jeanie_1d_from_features`](#jeanie_1d_from_features), [`jeanie_1d_from_cost`](#jeanie_1d_from_cost), [`jeanie_2d_from_features`](#jeanie_2d_from_features), [`jeanie_2d_from_cost`](#jeanie_2d_from_cost)
 * FVM: [`fvm_query_only_1d`](#fvm_query_only_1d), [`fvm_query_only_2d`](#fvm_query_only_2d), [`fvm_1d_from_cost`](#fvm_1d_from_cost), [`fvm_2d_from_cost`](#fvm_2d_from_cost), [`fvm_from_cost`](#fvm_from_cost)
-* soft-DTW and helpers: [`soft_dtw`](#soft_dtw), [`softmin`](#softmin)
+* soft-DTW: [`soft_dtw`](#soft_dtw)
 * Base distances: [`euclidean_cost`](#euclidean_cost), [`squared_euclidean_cost`](#squared_euclidean_cost), [`rbf_cost`](#rbf_cost)
-* [`torchwarp.paths`](#torchwarppaths): [`Alignment`](#alignment), [`udtw`](#pathsudtw), [`sdtw`](#pathssdtw), [`sdtw_per_view`](#pathssdtw_per_view), [`fvm`](#pathsfvm), [`jeanie`](#pathsjeanie), [`optimal_path`](#pathsoptimal_path)
+* [`torchwarp.paths`](#torchwarppaths): [`Alignment`](#alignment), [`udtw`](#pathsudtw), [`soft_dtw`](#pathssoft_dtw), [`soft_dtw_per_view`](#pathssoft_dtw_per_view), [`fvm`](#pathsfvm), [`jeanie`](#pathsjeanie), [`optimal_path`](#pathsoptimal_path)
 * [`torchwarp.plot`](#torchwarpplot): [`udtw_figure`](#plotudtw_figure), [`viewpoint_figure`](#plotviewpoint_figure), [`alignment`](#plotalignment), [`uncertainty`](#plotuncertainty), [`path_3d`](#plotpath_3d)
 
 ---
@@ -35,15 +35,16 @@ For time step i of X and j of Y, with uncertainties σ<sub>i</sub> and
 path costs (Eq. 2); the penalty Ω is the sum of the penalty along the
 paths, weighted by the same soft selection (Eq. 3).
 
-### `uDTW`
+### `UDTW`
 
 ```python
-torchwarp.uDTW(use_cuda=False, gamma=1.0, normalize=False, bandwidth=None,
+torchwarp.UDTW(use_cuda=False, gamma=1.0, normalize=False, bandwidth=None,
                backend="auto", distance="gemm")
 ```
 
 `torch.nn.Module` computing the uDTW distance and penalty of each pair
-of sequences.
+of sequences. `torchwarp.uDTW` is the same class, under the name used by
+the official code.
 
 | argument | type | default | description |
 | --- | --- | --- | --- |
@@ -72,7 +73,7 @@ penalty β Ω of each pair (X[b], Y[b]).
 `TypeError` for non-floating-point inputs.
 
 ```python
-udtw = torchwarp.uDTW(gamma=1.0, normalize=True)
+udtw = torchwarp.UDTW(gamma=1.0, normalize=True)
 d, omega = udtw(X, Y, sx, sy, beta=1.0)
 loss = (d + omega).mean()
 ```
@@ -89,10 +90,10 @@ Functional form of `uDTW` (without `normalize`). Arguments as in
 
 **Returns** `(distance [B], penalty [B])`.
 
-### `udtw_from_matrices`
+### `udtw_from_cost`
 
 ```python
-torchwarp.udtw_from_matrices(cost, penalty, gamma=1.0, bandwidth=None,
+torchwarp.udtw_from_cost(cost, penalty, gamma=1.0, bandwidth=None,
                              backend="auto")
 ```
 
@@ -114,7 +115,7 @@ selection.
 ```python
 cost, penalty, Sigma = torchwarp.pairwise_matrices(X, Y, sx, sy, beta=1.0)
 cos = torch.nn.functional.cosine_similarity(X.unsqueeze(2), Y.unsqueeze(1), dim=-1)
-d, omega = torchwarp.udtw_from_matrices((1 - cos) / Sigma, penalty, gamma=1.0)
+d, omega = torchwarp.udtw_from_cost((1 - cos) / Sigma, penalty, gamma=1.0)
 ```
 
 ### `pairwise_matrices`
@@ -130,17 +131,8 @@ Builds the default uDTW matrices.
 cost<sub>ij</sub> = ‖x<sub>i</sub> - y<sub>j</sub>‖² / Σ<sub>ij</sub>,
 penalty<sub>ij</sub> = β log Σ<sub>ij</sub>,
 Σ<sub>ij</sub> = max(½ (σ<sub>i</sub>² + σ'<sub>j</sub>²), `eps`).
-`method` is passed to `squared_euclidean`.
-
-### `squared_euclidean`
-
-```python
-torchwarp.squared_euclidean(X, Y, method="gemm")
-```
-
-Squared Euclidean distances `[B, N, M]` between `X [B, N, D]` and
-`Y [B, M, D]`. `"gemm"` computes ‖x‖² + ‖y‖² - 2 x·y with one batched
-matrix product (low memory); `"diff"` forms x - y explicitly.
+`method` is `"gemm"` (‖x‖² + ‖y‖² - 2 x·y with one batched matrix
+product, low memory) or `"diff"` (forms x - y explicitly).
 
 ---
 
@@ -244,33 +236,6 @@ torchwarp.jeanie_2d_from_cost(cost, gamma=0.1, max_shift_az=1, max_shift_alt=1,
 As `jeanie_2d_from_features`, on a cost `[K1, K2, T, U]` or
 `[B, K1, K2, T, U]`.
 
-### `jeanie_dp_features`
-
-```python
-torchwarp.jeanie_dp_features(query, support, gamma=0.1, max_shift_1=1,
-                             max_shift_2=1, metric="euclidean", backend="auto",
-                             return_accumulator=False)
-```
-
-Batched JEANIE from features in the general two-axis layout, used by the
-functions above. `query` is `[B, K1, K2, T, D]`, `support` is
-`[B, U, D]` (one axis: `K2 = 1`, `max_shift_2 = 0`). For the Euclidean
-metrics on CUDA the cost tensor is never stored.
-
-**Returns** `(distance [B], R [B, K1, K2, T, U] or None)`; R is only
-built when `return_accumulator=True`.
-
-### `jeanie_dp`
-
-```python
-torchwarp.jeanie_dp(cost, gamma=0.1, max_shift_1=1, max_shift_2=1,
-                    backend="auto", return_accumulator=False)
-```
-
-Batched JEANIE on a cost `[B, K1, K2, T, U]`.
-
-**Returns** `(distance [B], R [B, K1, K2, T, U] or None)`.
-
 ---
 
 ## FVM
@@ -333,7 +298,7 @@ when `batched=True`) is a viewpoint axis reduced by the soft minimum.
 
 ---
 
-## soft-DTW and helpers
+## soft-DTW
 
 ### `soft_dtw`
 
@@ -347,27 +312,24 @@ soft-DTW of a cost `[T, U]` (returns a scalar) or `[B, T, U]` (returns
 
 ```python
 def sdtw_div(x, y, gamma):
-    c = lambda a, b: torchwarp.squared_euclidean(a, b)
+    c = lambda a, b: torchwarp.squared_euclidean_cost(a, b)
     return torchwarp.soft_dtw(c(x, y), gamma) - 0.5 * (
         torchwarp.soft_dtw(c(x, x), gamma) + torchwarp.soft_dtw(c(y, y), gamma))
 ```
-
-### `softmin`
-
-```python
-torchwarp.softmin(x, gamma, dim=None)
-```
-
--γ log Σ exp(-x/γ) over `dim` (over all elements when `dim=None`).
 
 ---
 
 ## Base distances
 
-All three take `query [..., K, T, D]` and `support [..., U, D]` (same
-leading dimensions, or none for `support`) and return `[..., K, T, U]`.
-For a support with viewpoints, or a query without, add or remove the
-viewpoint axis with `unsqueeze` / `squeeze`.
+All three accept two layouts:
+
+* JEANIE / FVM: `query [..., K, T, D]` and `support [..., U, D]` (same
+  leading dimensions, or none for `support`) return `[..., K, T, U]`.
+* Two sequences of the same rank, as for uDTW and soft-DTW:
+  `x [..., N, D]` and `y [..., M, D]` return `[..., N, M]`.
+
+For a support with viewpoints, add or remove the viewpoint axis with
+`unsqueeze` / `squeeze`.
 
 ### `euclidean_cost`
 
@@ -426,19 +388,19 @@ torchwarp.paths.udtw(X, Y, sigma_x, sigma_y, gamma=0.1, beta=1.0)
 uDTW paths for `X [B, N, D]`, `Y [B, M, D]`, `sigma_x [B, N, 1]`,
 `sigma_y [B, M, 1]`. **Returns** an `Alignment` with `Sigma` and `Omega`.
 
-### `paths.sdtw`
+### `paths.soft_dtw`
 
 ```python
-torchwarp.paths.sdtw(D, gamma=0.1)
+torchwarp.paths.soft_dtw(D, gamma=0.1)
 ```
 
 soft-DTW paths for a distance matrix `[T, U]` or `[B, T, U]`.
 
-### `paths.sdtw_per_view`
+### `paths.soft_dtw_per_view`
 
 ```python
-torchwarp.paths.sdtw_per_view(query, support, gamma=0.1, metric="euclidean",
-                              angles=None)
+torchwarp.paths.soft_dtw_per_view(query, support, gamma=0.1, metric="euclidean",
+                                  angles=None)
 ```
 
 soft-DTW applied to each query viewpoint separately. `query` is
@@ -451,7 +413,7 @@ soft-DTW applied to each query viewpoint separately. `query` is
 torchwarp.paths.fvm(query, support, gamma=0.1, metric="euclidean", angles=None)
 ```
 
-FVM paths (viewpoint free at every step). Shapes as in `sdtw_per_view`.
+FVM paths (viewpoint free at every step). Shapes as in `soft_dtw_per_view`.
 
 ### `paths.jeanie`
 

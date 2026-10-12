@@ -8,9 +8,9 @@ torch.func transform, torch.compile and autocast.
 import pytest
 import torch
 
+from torchwarp import UDTW, _cuda, pairwise_matrices, udtw_from_cost, udtw_from_features
+
 from conftest import reference
-from torchwarp import uDTW, pairwise_matrices, udtw_from_features, udtw_from_matrices
-from torchwarp import _cuda
 
 RefUDTW = reference("udtw").uDTW
 
@@ -63,7 +63,7 @@ def test_maml_meta_gradient(backend, device, distance, normalize, bandwidth):
 
     kw = dict(gamma=0.3, normalize=normalize, bandwidth=bandwidth)
     want = meta_grad(RefUDTW(**kw), "cpu")
-    got = meta_grad(uDTW(backend=backend, distance=distance, **kw), device)
+    got = meta_grad(UDTW(backend=backend, distance=distance, **kw), device)
     _close(got, want)
 
 
@@ -81,7 +81,7 @@ def test_third_derivative(backend, device, distance):
             y, = torch.autograd.grad(y, t, create_graph=True)
         return y.detach().cpu()
 
-    _close(d3(uDTW(gamma=0.5, backend=backend, distance=distance), device),
+    _close(d3(UDTW(gamma=0.5, backend=backend, distance=distance), device),
            d3(RefUDTW(gamma=0.5), "cpu"), tol=1e-7)
 
 
@@ -90,7 +90,7 @@ def test_gradgradcheck(backend, device):
     kw = dict(device=device, **f64)
     cost = torch.rand(2, 3, 4, **kw).requires_grad_()
     pen = torch.randn(2, 3, 4, **kw).requires_grad_()
-    f = lambda c, p: udtw_from_matrices(c, p, gamma=0.4, backend=backend)
+    f = lambda c, p: udtw_from_cost(c, p, gamma=0.4, backend=backend)
     assert torch.autograd.gradgradcheck(f, (cost, pen))
 
     X, Y, SX, SY = (t.to(device).requires_grad_() for t in _inputs(B=1, N=3, M=4, D=2))
@@ -110,7 +110,7 @@ def _ref_loss(X):
 def test_torch_func_transforms(backend, device, distance):
     X, Y, SX, SY = _inputs(B=1, N=3, M=4, D=2)
     rest = tuple(t.to(device) for t in (Y, SX, SY))
-    fast = uDTW(gamma=0.4, backend=backend, distance=distance)
+    fast = UDTW(gamma=0.4, backend=backend, distance=distance)
     f = lambda x: _scalar(fast)(x, *rest)
     x = X.to(device)
 
@@ -131,7 +131,7 @@ def test_torch_func_transforms(backend, device, distance):
 def test_vmap(backend, device, distance):
     X, Y, SX, SY = (t.to(device) for t in _inputs(B=2, N=4, M=5))
     stack = lambda t: torch.stack([t, 1.1 * t, 0.9 * t])
-    fast = uDTW(gamma=0.3, backend=backend, distance=distance)
+    fast = UDTW(gamma=0.3, backend=backend, distance=distance)
     d, p = torch.func.vmap(lambda *a: fast(*a, beta=0.5))(stack(X), stack(Y), stack(SX), stack(SY))
     for k in range(3):
         dk, pk = RefUDTW(gamma=0.3)(*(stack(t)[k].cpu() for t in (X, Y, SX, SY)), beta=0.5)
@@ -151,7 +151,7 @@ def test_vmap(backend, device, distance):
 def test_torch_compile_fullgraph(backend, device, distance):
     torch._dynamo.reset()
     X, Y, SX, SY = (t.to(device).requires_grad_() for t in _inputs(B=3, N=5, M=7))
-    fast = uDTW(gamma=0.3, normalize=True, backend=backend, distance=distance)
+    fast = UDTW(gamma=0.3, normalize=True, backend=backend, distance=distance)
     f = _scalar(fast)
     compiled = torch.compile(f, fullgraph=True)
     want = f(X, Y, SX, SY)
@@ -166,7 +166,7 @@ def test_autocast_runs_in_float32():
     X, Y, SX, SY = (t.float().cuda().requires_grad_() for t in _inputs(B=2, N=5, M=6))
     lin = torch.nn.Linear(4, 4).cuda()
     for distance in DISTANCES:
-        m = uDTW(gamma=0.3, distance=distance)
+        m = UDTW(gamma=0.3, distance=distance)
         with torch.autocast("cuda", dtype=torch.float16):
             d, p = m(lin(X), lin(Y), SX, SY)
         assert d.dtype == torch.float32 and p.dtype == torch.float32
@@ -181,5 +181,5 @@ def test_pairwise_matrices_path_is_differentiable_twice():
     # distance="diff" builds matrices in PyTorch; gradients of every order
     # flow through pairwise_matrices and the DP op.
     X, Y, SX, SY = (t.requires_grad_() for t in _inputs(B=1, N=3, M=3, D=2))
-    f = lambda *a: udtw_from_matrices(*pairwise_matrices(*a, beta=0.5)[:2], gamma=0.4)
+    f = lambda *a: udtw_from_cost(*pairwise_matrices(*a, beta=0.5)[:2], gamma=0.4)
     assert torch.autograd.gradgradcheck(f, (X, Y, SX, SY))

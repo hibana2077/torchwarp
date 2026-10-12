@@ -4,7 +4,8 @@ import pytest
 import torch
 
 import torchwarp
-from torchwarp import JEANIE, _cuda, uDTW
+from torchwarp import JEANIE, UDTW, _cuda
+from torchwarp.jeanie.functional import _jeanie_dp
 
 BACKENDS = [("torch", "cpu")]
 if torch.cuda.is_available():
@@ -19,6 +20,17 @@ def test_exports():
     for name in torchwarp.__all__:
         assert hasattr(torchwarp, name), name
     assert torchwarp.__version__
+    assert torchwarp.uDTW is torchwarp.UDTW
+
+
+def test_cost_on_sequence_pairs():
+    g = torch.Generator().manual_seed(0)
+    X, Y = torch.rand(2, 5, 3, generator=g, **f64), torch.rand(2, 7, 3, generator=g, **f64)
+    diff = X.unsqueeze(2) - Y.unsqueeze(1)                         # [2, 5, 7, 3]
+    torch.testing.assert_close(torchwarp.squared_euclidean_cost(X, Y), diff.pow(2).sum(-1))
+    torch.testing.assert_close(torchwarp.euclidean_cost(X, Y), diff.pow(2).sum(-1).sqrt())
+    torch.testing.assert_close(torchwarp.rbf_cost(X, Y, sigma=0.5),
+                               (2 - 2 * torch.exp(-0.5 * diff.pow(2))).sum(-1))
 
 
 @pytest.mark.parametrize("backend,device", BACKENDS, ids=IDS)
@@ -27,12 +39,12 @@ def test_udtw_module(backend, device):
     X, Y = torch.rand(3, 6, 4, generator=g, **f64), torch.rand(3, 8, 4, generator=g, **f64)
     SX, SY = 0.5 + torch.rand(3, 6, 1, generator=g, **f64), 0.5 + torch.rand(3, 8, 1, generator=g, **f64)
     xs = [t.to(device).requires_grad_() for t in (X, Y, SX, SY)]
-    d, p = uDTW(gamma=0.3, backend=backend)(*xs, beta=0.5)
+    d, p = UDTW(gamma=0.3, backend=backend)(*xs, beta=0.5)
     assert d.shape == p.shape == (3,)
     (d.sum() + p.sum()).backward()
     assert all(torch.isfinite(x.grad).all() for x in xs)
     # the two distance formulations agree
-    d2, p2 = uDTW(gamma=0.3, backend=backend, distance="diff")(*xs, beta=0.5)
+    d2, p2 = UDTW(gamma=0.3, backend=backend, distance="diff")(*xs, beta=0.5)
     torch.testing.assert_close(d, d2)
     torch.testing.assert_close(p, p2)
 
@@ -59,7 +71,7 @@ def test_jeanie_module(backend, device):
 def test_backends_agree():
     g = torch.Generator().manual_seed(2)
     cost = torch.rand(4, 3, 2, 7, 9, generator=g, **f64)
-    outs = [torchwarp.jeanie_dp(cost.to(d), 0.2, 1, 1, b)[0].cpu() for b, d in BACKENDS]
+    outs = [_jeanie_dp(cost.to(d), 0.2, 1, 1, b)[0].cpu() for b, d in BACKENDS]
     for o in outs[1:]:
         torch.testing.assert_close(o, outs[0], atol=1e-10, rtol=1e-10)
 
@@ -70,12 +82,12 @@ def test_gradcheck(backend, device):
     c = torch.rand(2, 3, 4, **kw).requires_grad_()
     q = torch.randn(2, 3, 4, **kw).requires_grad_()
     assert torch.autograd.gradcheck(
-        lambda a, b: torchwarp.udtw_from_matrices(a, b, gamma=0.4, backend=backend), (c, q))
+        lambda a, b: torchwarp.udtw_from_cost(a, b, gamma=0.4, backend=backend), (c, q))
     cost = torch.rand(2, 2, 1, 3, 4, **kw).requires_grad_()
     assert torch.autograd.gradcheck(
-        lambda a: torchwarp.jeanie_dp(a, 0.4, 1, 0, backend)[0], (cost,))
+        lambda a: _jeanie_dp(a, 0.4, 1, 0, backend)[0], (cost,))
 
 
 def test_testing_reference_names():
-    from torchwarp.testing import _UPSTREAM
+    from torchwarp._reference import _UPSTREAM
     assert set(_UPSTREAM) == {"udtw", "jeanie"}

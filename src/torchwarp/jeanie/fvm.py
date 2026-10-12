@@ -6,7 +6,7 @@ Each wrapper accepts its unbatched layout or one extra leading batch dim.
 
 import torch
 
-from .alignment import soft_dtw
+from .. import sdtw  # module, not the function: sdtw imports this package
 
 
 def fvm_from_cost(
@@ -30,7 +30,7 @@ def fvm_from_cost(
     T, U = cost.shape[-2:]
     flat = cost.reshape(*cost.shape[:lead], -1, T, U)
     temporal = -gamma * torch.logsumexp(-flat / gamma, dim=lead)
-    return soft_dtw(temporal, gamma, backend)
+    return sdtw.soft_dtw(temporal, gamma, backend)
 
 
 def _fvm_fixed(cost, ndim, layout, gamma, backend):

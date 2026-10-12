@@ -41,7 +41,7 @@ sx = sigma_net(X) + 1e-3
 sy = sigma_net(Y) + 1e-3
 
 # d and omega: [batch], one distance and one penalty per pair
-udtw = torchwarp.uDTW(gamma=1.0, normalize=True)
+udtw = torchwarp.UDTW(gamma=1.0, normalize=True)
 d, omega = udtw(X, Y, sx, sy, beta=1.0)
 loss = (d + omega).mean()
 loss.backward()
@@ -51,7 +51,7 @@ loss.backward()
 another distance between time steps, build the two `[batch, len_x, len_y]`
 matrices of Eq. 2 and Eq. 3 yourself, cost<sub>ij</sub> =
 d(x<sub>i</sub>, y<sub>j</sub>) / Σ<sub>ij</sub> and penalty<sub>ij</sub>
-= β log Σ<sub>ij</sub>, and pass them to `udtw_from_matrices`. Here
+= β log Σ<sub>ij</sub>, and pass them to `udtw_from_cost`. Here
 `pairwise_matrices` returns the default cost, the penalty and Σ, and the
 cost is replaced by the cosine distance
 d(x<sub>i</sub>, y<sub>j</sub>) = 1 - cos(x<sub>i</sub>, y<sub>j</sub>):
@@ -62,7 +62,7 @@ cost, penalty, Sigma = torchwarp.pairwise_matrices(X, Y, sx, sy, beta=1.0)
 
 # cosine distance between time steps instead of the squared Euclidean one
 cos = nn.functional.cosine_similarity(X.unsqueeze(2), Y.unsqueeze(1), dim=-1)
-d, omega = torchwarp.udtw_from_matrices((1 - cos) / Sigma, penalty, gamma=1.0)
+d, omega = torchwarp.udtw_from_cost((1 - cos) / Sigma, penalty, gamma=1.0)
 ```
 
 ## JEANIE
@@ -275,7 +275,7 @@ sDTW(x, y) - ½ [sDTW(x, x) + sDTW(y, y)]:
 
 ```python
 def sdtw(a, b, gamma=0.1):
-    return torchwarp.soft_dtw(torchwarp.squared_euclidean(a, b), gamma)
+    return torchwarp.soft_dtw(torchwarp.squared_euclidean_cost(a, b), gamma)
 
 
 # x, y: [batch, length, features]
@@ -295,13 +295,14 @@ features from your own trained model. With untrained features the
 figures can still be drawn but the paths have no meaning.
 
 The two figures below come from the uDTW model trained by
-`examples/ecg5000_forecast.py` and the JEANIE encoder trained by
-`examples/nwucla_fewshot.py` (seed 42). To draw them again:
+`experiments/ecg5000_forecast.py` and the JEANIE encoder trained by
+`experiments/nwucla_fewshot.py` (seed 42). To draw them again:
 
 ```bash
-python examples/ecg5000_forecast.py --loss udtw --seeds 42 --save-ckpt examples/results/ckpt
-python examples/nwucla_fewshot.py --method jeanie --seeds 42 --save-ckpt examples/results/ckpt
-python examples/plot_paths.py
+python experiments/ecg5000_forecast.py --loss udtw --seeds 42 --save-ckpt experiments/results/ckpt
+python experiments/ecg5000_plot_paths.py
+python experiments/nwucla_fewshot.py --method jeanie --seeds 42 --save-ckpt experiments/results/ckpt
+python experiments/nwucla_plot_paths.py --query 970 --support 1005 --out assets
 ```
 
 ### uDTW
@@ -338,7 +339,7 @@ with torch.no_grad():
     cost, penalty, Sigma = torchwarp.pairwise_matrices(X, Y, sx, sy)
 cost.requires_grad_(True)
 
-d, omega = torchwarp.udtw_from_matrices(cost, penalty, gamma=0.01)
+d, omega = torchwarp.udtw_from_cost(cost, penalty, gamma=0.01)
 d.sum().backward()
 
 cost.grad  # equals a.path_matrix

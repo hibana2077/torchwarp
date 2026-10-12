@@ -13,7 +13,7 @@ Two layers:
 
 First-order reverse mode runs the analytic backward kernel. Forward mode,
 and differentiating *through* a backward pass (second and higher orders),
-use the autograd-native implementation in ``_diff`` via ``torch.func``, so
+use the autograd-native implementation in ``_autograd`` via ``torch.func``, so
 every derivative is exact. That slower path never runs in ordinary training.
 
 R, P and G are internal: diagonal-major [B, N*M] tensors saved for backward.
@@ -25,10 +25,9 @@ from typing import Tuple
 import torch
 from torch import Tensor
 
-from . import _diff, _torch_dp
 from .. import _cuda
 from .._layout import diag_perm
-
+from . import _autograd, _torch_dp
 
 # ------------------------------------------------------------------ helpers
 
@@ -137,7 +136,7 @@ _register_autocast(dp_backward)
 # ------------------------------------- fused DP straight from the features
 
 def _features_fallback_forward(X, Y, vx, vy, gamma, beta, eps, bandwidth):
-    cost, pen = _diff.matrices_from_features(X, Y, vx, vy, beta, eps)
+    cost, pen = _autograd.matrices_from_features(X, Y, vx, vy, beta, eps)
     out_r, out_p, R, P = _torch_dp.udtw_forward(cost, pen, gamma, bandwidth)
     G = torch.bmm(X, Y.transpose(1, 2))
     x2, y2 = torch.linalg.vecdot(X, X), torch.linalg.vecdot(Y, Y)
@@ -217,8 +216,8 @@ _register_autocast(fused_backward)
 #
 # Derivative routing:
 #   reverse, first order  -> *_backward custom op (analytic kernel)
-#   forward mode (jvp)    -> torch.func.jvp of the _diff implementation
-#   through a backward    -> torch.func.vjp/jvp of the _diff implementation
+#   forward mode (jvp)    -> torch.func.jvp of the _autograd implementation
+#   through a backward    -> torch.func.vjp/jvp of the _autograd implementation
 # torch.func.vjp/jvp compose with ordinary autograd and with every
 # torch.func transform, so any nesting stays exact.
 
@@ -282,7 +281,7 @@ class DP(torch.autograd.Function):
     def jvp(ctx, t_cost, t_pen, *_):
         cost, penalty = ctx.saved_tensors
         gamma, bandwidth, _ = ctx.args
-        f = lambda c, q: _diff.udtw(c, q, gamma, bandwidth)
+        f = lambda c, q: _autograd.udtw(c, q, gamma, bandwidth)
         t_r, t_p = _jvp_of(f, (cost, penalty), (_zeros(t_cost, cost), _zeros(t_pen, penalty)))
         return t_r, t_p, None, None
 
@@ -306,7 +305,7 @@ class DPBackward(torch.autograd.Function):
     @staticmethod
     def _first(ctx):
         gamma, bandwidth = ctx.args
-        return _first_order(lambda c, q: _diff.udtw(c, q, gamma, bandwidth), 2)
+        return _first_order(lambda c, q: _autograd.udtw(c, q, gamma, bandwidth), 2)
 
     @staticmethod
     def backward(ctx, gg_cost, gg_pen):
@@ -344,7 +343,7 @@ class Fused(torch.autograd.Function):
     @staticmethod
     def _f(ctx):
         gamma, beta, eps, bandwidth, _ = ctx.args
-        return lambda x, y, a, b: _diff.udtw_features(x, y, a, b, gamma, beta, eps, bandwidth)
+        return lambda x, y, a, b: _autograd.udtw_features(x, y, a, b, gamma, beta, eps, bandwidth)
 
     @staticmethod
     def backward(ctx, g_r, g_p, *_internal):
@@ -387,7 +386,7 @@ class FusedBackward(torch.autograd.Function):
     def _first(ctx):
         gamma, beta, eps, bandwidth = ctx.args
         return _first_order(
-            lambda x, y, a, b: _diff.udtw_features(x, y, a, b, gamma, beta, eps, bandwidth), 4)
+            lambda x, y, a, b: _autograd.udtw_features(x, y, a, b, gamma, beta, eps, bandwidth), 4)
 
     @staticmethod
     def backward(ctx, gg_X, gg_Y, gg_vx, gg_vy):

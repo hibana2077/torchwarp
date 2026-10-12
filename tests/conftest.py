@@ -11,9 +11,9 @@ def reference(name):
     """Official package ("udtw" or "jeanie"), or skip the module.
 
     The reference code is downloaded once from github.com/LeiWangR at a
-    pinned commit (see torchwarp.testing).
+    pinned commit (see torchwarp._reference).
     """
-    from torchwarp.testing import load_reference
+    from torchwarp._reference import load_reference
 
     try:
         return load_reference(name)

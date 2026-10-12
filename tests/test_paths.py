@@ -29,7 +29,7 @@ def check_monotone(path, T, U):
 def test_sdtw_hard_path_is_the_dtw_path(device):
     torch.manual_seed(0)
     cost = torch.rand(3, 9, 12, dtype=torch.float64, device=device)
-    a = paths.sdtw(cost, gamma=1e-3)
+    a = paths.soft_dtw(cost, gamma=1e-3)
     for b in range(3):
         check_monotone(a.optimal_path[b], 9, 12)
         along = sum(float(cost[b, t, u]) for t, u in a.optimal_path[b])
@@ -48,7 +48,7 @@ def test_udtw_alignment(device):
     sx = torch.rand(2, 7, 1, dtype=torch.float64, device=device) + 0.5
     sy = torch.rand(2, 9, 1, dtype=torch.float64, device=device) + 0.5
     a = paths.udtw(X, Y, sx, sy, gamma=0.1, beta=1.0)
-    d, omega = torchwarp.uDTW(gamma=0.1)(X, Y, sx, sy, beta=1.0)
+    d, omega = torchwarp.UDTW(gamma=0.1)(X, Y, sx, sy, beta=1.0)
     assert torch.allclose(a.distance, d) and torch.allclose(a.Omega, omega)
     assert a.path_matrix.shape == a.Sigma.shape == (2, 7, 9)
     for p in a.optimal_path:
@@ -80,7 +80,7 @@ def test_jeanie_and_fvm_paths(device, max_shift):
     for p in f.optimal_path:
         check_monotone(p, 8, 10)
 
-    views = paths.sdtw_per_view(q, s, gamma=0.1)
+    views = paths.soft_dtw_per_view(q, s, gamma=0.1)
     assert len(views) == 5
     for k, v in enumerate(views):
         assert all(c[2] == k for p in v.optimal_path for c in p)

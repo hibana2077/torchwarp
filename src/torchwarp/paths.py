@@ -22,11 +22,11 @@ from typing import List, Optional, Tuple
 import numpy as np
 import torch
 
-from .jeanie import (euclidean_cost, fvm_query_only_1d, jeanie_1d_from_cost, soft_dtw,
-                     squared_euclidean_cost)
-from .udtw import pairwise_matrices, udtw_from_matrices
+from . import sdtw as _sdtw
+from .jeanie import euclidean_cost, fvm_query_only_1d, jeanie_1d_from_cost, squared_euclidean_cost
+from .udtw import pairwise_matrices, udtw_from_cost
 
-__all__ = ["Alignment", "sdtw", "sdtw_per_view", "udtw", "fvm", "jeanie", "optimal_path"]
+__all__ = ["Alignment", "soft_dtw", "soft_dtw_per_view", "udtw", "fvm", "jeanie", "optimal_path"]
 
 
 @dataclass
@@ -121,14 +121,14 @@ def _base_distance(query, support, metric):
     raise ValueError("metric must be 'euclidean' or 'sqeuclidean'")
 
 
-def sdtw(D, gamma=0.1):
+def soft_dtw(D, gamma=0.1):
     """soft-DTW paths for a distance matrix D [B, T, U] (or [T, U])."""
     D = _batched(D, 2)
-    d, pm = _value_and_grad(lambda x: soft_dtw(x, gamma), D)
+    d, pm = _value_and_grad(lambda x: _sdtw.soft_dtw(x, gamma), D)
     return Alignment(d, pm, optimal_path(D), D)
 
 
-def sdtw_per_view(query, support, gamma=0.1, metric="euclidean", angles=None):
+def soft_dtw_per_view(query, support, gamma=0.1, metric="euclidean", angles=None):
     """soft-DTW (view-wise): each viewpoint of the query aligned separately.
 
     query [B, K, T, d] (or [K, T, d]), support [B, U, d] (or [U, d]).
@@ -137,7 +137,7 @@ def sdtw_per_view(query, support, gamma=0.1, metric="euclidean", angles=None):
     D = _base_distance(_batched(query, 3), _batched(support, 2), metric)
     out = []
     for k in range(D.shape[1]):
-        a = sdtw(D[:, k], gamma)
+        a = soft_dtw(D[:, k], gamma)
         a.optimal_path = [[(t, u, k) for t, u in p] for p in a.optimal_path]
         a.angles = angles
         out.append(a)
@@ -152,9 +152,9 @@ def udtw(X, Y, sigma_x, sigma_y, gamma=0.1, beta=1.0):
     """
     with torch.no_grad():
         DS, pen, Sigma = pairwise_matrices(X, Y, sigma_x, sigma_y, beta)
-    d, pm = _value_and_grad(lambda x: udtw_from_matrices(x, pen, gamma)[0], DS)
+    d, pm = _value_and_grad(lambda x: udtw_from_cost(x, pen, gamma)[0], DS)
     with torch.no_grad():
-        Omega = udtw_from_matrices(DS, pen, gamma)[1]
+        Omega = udtw_from_cost(DS, pen, gamma)[1]
     return Alignment(d, pm, optimal_path(DS), DS, Sigma=Sigma, Omega=Omega)
 
 

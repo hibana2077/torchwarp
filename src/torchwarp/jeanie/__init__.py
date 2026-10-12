@@ -1,16 +1,12 @@
-"""JEANIE (IJCV 2024), soft-DTW and Free Viewpoint Matching."""
+"""JEANIE (IJCV 2024) and Free Viewpoint Matching."""
 
-from .alignment import (
+from .distances import euclidean_cost, rbf_cost, squared_euclidean_cost
+from .functional import (
     jeanie_1d_from_cost,
     jeanie_1d_from_features,
     jeanie_2d_from_cost,
     jeanie_2d_from_features,
-    jeanie_dp,
-    jeanie_dp_features,
-    soft_dtw,
-    softmin,
 )
-from .distances import euclidean_cost, rbf_cost, squared_euclidean_cost
 from .fvm import (
     fvm_1d_from_cost,
     fvm_2d_from_cost,
@@ -26,10 +22,6 @@ __all__ = [
     "jeanie_1d_from_features",
     "jeanie_2d_from_cost",
     "jeanie_2d_from_features",
-    "jeanie_dp",
-    "jeanie_dp_features",
-    "soft_dtw",
-    "softmin",
     "fvm_from_cost",
     "fvm_1d_from_cost",
     "fvm_2d_from_cost",

@@ -9,11 +9,11 @@ dist/
 .mypy_cache/
 .DS_Store
 
-# example datasets (fetch with examples/download_data.sh)
-examples/data/
+# example datasets (fetch with experiments/download_data.sh)
+experiments/data/
 
 # experiment outputs
-examples/results/
+experiments/results/
 
 
 ref.md

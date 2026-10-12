@@ -1,14 +1,16 @@
 # torchwarp
 
+[![test](https://github.com/hibana2077/torchwarp/actions/workflows/test.yml/badge.svg)](https://github.com/hibana2077/torchwarp/actions/workflows/test.yml)
+
 **torchwarp** is an accelerated PyTorch implementation of [uDTW](https://github.com/LeiWangR/uDTW) and [JEANIE](https://github.com/LeiWangR/JEANIE), providing differentiable sequence alignment with optimized CUDA kernels.
 
-This repository includes uDTW, JEANIE and FVM, together with examples and benchmarks.
+This repository includes uDTW, JEANIE and FVM, together with examples and the experiments behind the results below.
 
 ## Features
 
 - **uDTW, JEANIE and FVM:** differentiable alignment, with forward values and gradients validated against the original implementations (see `tests/`).
 - **CUDA acceleration:** up to 963× faster training steps in the NW-UCLA benchmark (see [Results](#results)).
-- **Examples:** few-shot action recognition on NW-UCLA, with optional alignment visualizations.
+- **Examples and experiments:** short usage examples in `examples/`; ECG5000 forecasting and NW-UCLA few-shot action recognition in `experiments/`, with alignment visualizations.
 
 ## Installation
 
@@ -26,7 +28,7 @@ CUDA acceleration needs a CUDA-enabled PyTorch build and a CUDA toolkit (`nvcc`)
 
 ```python
 import torch
-from torchwarp import uDTW
+from torchwarp import UDTW
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -37,7 +39,7 @@ Y = torch.randn(4, 40, 8, device=device)
 sigma_x = torch.rand(4, 30, 1, device=device) + 0.5
 sigma_y = torch.rand(4, 40, 1, device=device) + 0.5
 
-udtw = uDTW(gamma=1.0)
+udtw = UDTW(gamma=1.0)
 d, omega = udtw(X, Y, sigma_x, sigma_y, beta=1.0)
 
 (d + omega).mean().backward()
@@ -54,7 +56,7 @@ practice they are predicted from the features by a small network
 (SigmaNet in the paper). `d` is the uDTW distance and `omega` the
 uncertainty penalty β Ω, one value per pair (shape `[B]`); the training
 loss adds the two. For `normalize=True`, custom base distances and
-`torchwarp.udtw_from_matrices`, see the [usage guide](docs/usage.md).
+`torchwarp.udtw_from_cost`, see the [usage guide](docs/usage.md).
 
 ### JEANIE and FVM
 
@@ -104,7 +106,7 @@ Predict the last 40% of each series from the first 60%; test metrics of
 the MLP trained with each loss (mean ± std over seeds 42, 43, 44; lower is
 better). soft-DTW and soft-DTW divergence use γ = 0.001; the uDTW
 hyperparameters were selected on a validation split of the training set
-([`tune_ecg5000_udtw.py`](examples/tune_ecg5000_udtw.py)).
+([`ecg5000_tune.py`](experiments/ecg5000_tune.py)).
 
 | loss | MSE | DTW | sDTW div. | uDTW |
 | --- | --- | --- | --- | --- |
@@ -153,30 +155,39 @@ Hardware, software versions, timing method and experimental settings are in [ben
 
 ## Examples
 
-To run the NW-UCLA experiments of the table (seeds 42, 43, 44 by default;
-results are written to `examples/results/`):
+Short scripts to copy from (CPU or GPU):
 
 ```bash
-bash examples/download_data.sh
-for m in sdtw sdtw_div udtw fvm; do python examples/nwucla_fewshot.py --method $m; done
-for s in 1 2; do python examples/nwucla_fewshot.py --method jeanie --max-shift $s; done
+python examples/quickstart_udtw.py     # uDTW as a training loss with a learned uncertainty
+python examples/quickstart_jeanie.py   # JEANIE and FVM in a 5-way 1-shot episode
+```
+
+## Experiments
+
+To run the NW-UCLA experiments of the table (seeds 42, 43, 44 by default;
+results are written to `experiments/results/`):
+
+```bash
+bash experiments/download_data.sh
+for m in sdtw sdtw_div udtw fvm; do python experiments/nwucla_fewshot.py --method $m; done
+for s in 1 2; do python experiments/nwucla_fewshot.py --method jeanie --max-shift $s; done
 ```
 
 To draw the soft-DTW, FVM and JEANIE alignment paths for the NW-UCLA
 test split:
 
 ```bash
-python examples/nwucla_fewshot.py --method jeanie --seeds 42 --save-ckpt examples/results/ckpt
-python examples/plot_jeanie_paths.py
+python experiments/nwucla_fewshot.py --method jeanie --seeds 42 --save-ckpt experiments/results/ckpt
+python experiments/nwucla_plot_paths.py
 ```
 
 To run the ECG5000 experiments of the table, the uDTW validation search
 and the timing:
 
 ```bash
-for l in euclidean dtw sdtw sdtw_div udtw; do python examples/ecg5000_forecast.py --loss $l; done
-python examples/tune_ecg5000_udtw.py run && python examples/tune_ecg5000_udtw.py select
-python examples/speed_ecg5000.py
+for l in euclidean dtw sdtw sdtw_div udtw; do python experiments/ecg5000_forecast.py --loss $l; done
+python experiments/ecg5000_tune.py run && python experiments/ecg5000_tune.py select
+python experiments/ecg5000_speed.py
 ```
 
 ## Documentation

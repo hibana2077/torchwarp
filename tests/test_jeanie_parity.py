@@ -9,8 +9,10 @@ import pytest
 import torch
 
 import torchwarp as fast
-from conftest import reference
 from torchwarp import _cuda
+from torchwarp.jeanie.functional import _jeanie_dp, _jeanie_dp_features
+
+from conftest import reference
 
 ref = reference("jeanie")
 
@@ -130,13 +132,13 @@ def test_maml_meta_gradient(backend, device, path):
 @pytest.mark.parametrize("backend,device", BACKENDS, ids=IDS)
 def test_gradgradcheck(backend, device):
     cost = torch.rand(2, 2, 2, 3, 4, device=device, **f64).requires_grad_()
-    f = lambda c: fast.jeanie_dp(c, 0.5, 1, 1, backend, return_accumulator=True)
+    f = lambda c: _jeanie_dp(c, 0.5, 1, 1, backend, return_accumulator=True)
     assert torch.autograd.gradgradcheck(lambda c: tuple(f(c)), (cost,))
 
     q = torch.randn(1, 2, 1, 3, 2, device=device, **f64).requires_grad_()
     s = torch.randn(1, 4, 2, device=device, **f64).requires_grad_()
     for metric in ("euclidean", "sqeuclidean"):
-        g = lambda q, s: tuple(fast.jeanie_dp_features(q, s, 0.5, 1, 0, metric, backend,
+        g = lambda q, s: tuple(_jeanie_dp_features(q, s, 0.5, 1, 0, metric, backend,
                                                        return_accumulator=True))
         assert torch.autograd.gradgradcheck(g, (q, s))
 

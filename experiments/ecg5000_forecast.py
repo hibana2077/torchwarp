@@ -19,7 +19,7 @@ Two setups, both with Sigma = 0.5 (sigma^2 + sigma'^2) (Eq. 8):
     official SimpleSigmaNet). The paper
     leaves t', epochs, batch size, gamma and beta unspecified; PAPER_LOSSES
     holds values selected on a 400/100 validation split of the training set
-    (examples/tune_ecg5000_paper.py).
+    (experiments/ecg5000_tune.py --setup paper).
 
 Test metrics (float64, lower is better): MSE (per time step), SSE (summed
 over the 56 predicted steps), DTW, sDTW div. (gamma=1) and uDTW (gamma=1,
@@ -27,8 +27,8 @@ beta=1, normalize=True). The uDTW metric takes sigma from one fixed
 evaluation SigmaNet (a uDTW run with seed EVAL_SEED), shared by every model.
 
 Usage:
-  python examples/ecg5000_forecast.py --loss udtw
-  python examples/ecg5000_forecast.py --setup paper --loss udtw --seeds $(seq 0 99)
+  python experiments/ecg5000_forecast.py --loss udtw
+  python experiments/ecg5000_forecast.py --setup paper --loss udtw --seeds $(seq 0 99)
 """
 
 import argparse
@@ -42,11 +42,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from torchwarp import soft_dtw, uDTW
+from torchwarp import UDTW, soft_dtw
 
 ROOT = Path(__file__).resolve().parents[1]
-DATA = ROOT / "examples" / "data"
-RESULTS = ROOT / "examples" / "results"
+DATA = ROOT / "experiments" / "data"
+RESULTS = ROOT / "experiments" / "results"
 
 BASE = dict(
     input_len=84, output_len=56, hidden=256, act="relu", init="default",
@@ -59,7 +59,7 @@ LOSSES = {
     "dtw": {},
     "sdtw": dict(gamma=0.001),
     "sdtw_div": dict(gamma=0.001),
-    "udtw": dict(gamma=0.1, beta=0.01, sigma_a=2.0, sigma_b=0.1, lr=1e-3,     # tune_ecg5000_udtw.py
+    "udtw": dict(gamma=0.1, beta=0.01, sigma_a=2.0, sigma_b=0.1, lr=1e-3,     # ecg5000_tune.py
                  normalize=False),
 }
 PAPER_BASE = dict(
@@ -68,7 +68,7 @@ PAPER_BASE = dict(
     gamma=1.0, beta=1.0, normalize=False,
     optimizer="sgd", lr=1e-3, weight_decay=1e-6, batch_size=1, epochs=100,
 )
-PAPER_LOSSES = {                                    # tune_ecg5000_paper.py select
+PAPER_LOSSES = {                                    # ecg5000_tune.py --setup paper select
     "euclidean": dict(hidden=30, batch_size=1, epochs=50),
     "dtw": dict(hidden=30, batch_size=10, epochs=100),
     "sdtw": dict(hidden=30, batch_size=1, epochs=50, gamma=0.1),
@@ -184,7 +184,7 @@ def make_loss(name, cfg):
         if name == "sdtw":
             return lambda pred, y, sigma: sdtw(pred, y).mean()
         return lambda pred, y, sigma: (sdtw(pred, y) - 0.5 * (sdtw(pred, pred) + sdtw(y, y))).mean()
-    crit = uDTW(gamma=cfg["gamma"], normalize=cfg["normalize"])
+    crit = UDTW(gamma=cfg["gamma"], normalize=cfg["normalize"])
 
     def loss(pred, y, sigma):
         d, p = crit(pred.unsqueeze(-1), y.unsqueeze(-1),
@@ -261,7 +261,7 @@ def eval_sigmanet(setup, train, device):
 
 def evaluate(f, sigma_eval, test, cfg):
     """Test metrics; sigma_eval = the evaluation SigmaNet, or None to skip uDTW."""
-    metric = uDTW(gamma=1.0, normalize=True, backend="torch")
+    metric = UDTW(gamma=1.0, normalize=True, backend="torch")
     x = test[:, :cfg["input_len"]].double()
     y = test[:, cfg["input_len"]:].double()
     with torch.no_grad():

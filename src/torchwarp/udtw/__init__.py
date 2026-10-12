@@ -1,17 +1,12 @@
 """Uncertainty-DTW (ECCV 2022)."""
 
-from .core import (
-    pairwise_matrices,
-    squared_euclidean,
-    uDTW,
-    udtw_from_features,
-    udtw_from_matrices,
-)
+from .functional import pairwise_matrices, udtw_from_cost, udtw_from_features
+from .module import UDTW, uDTW
 
 __all__ = [
+    "UDTW",
     "uDTW",
+    "udtw_from_cost",
     "udtw_from_features",
-    "udtw_from_matrices",
     "pairwise_matrices",
-    "squared_euclidean",
 ]

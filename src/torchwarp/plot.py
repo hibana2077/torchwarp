@@ -264,7 +264,7 @@ def viewpoint_figure(query, support, angles, gamma=0.1, max_shift=1, metric="euc
               index=index, pose_step=pose_step)
     g_s, g_f, g_j = sdtw_gamma or gamma, fvm_gamma or gamma, jeanie_gamma or gamma
 
-    per_view = _paths.sdtw_per_view(query, support, g_s, metric, angles)
+    per_view = _paths.soft_dtw_per_view(query, support, g_s, metric, angles)
     path_3d(per_view, ["{:.2f}".format(float(a.distance[index])) for a in per_view],
             ax=axes[0], title=titles[0], **kw)
 

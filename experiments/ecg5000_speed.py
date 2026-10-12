@@ -7,7 +7,7 @@ one-time JIT compilation of the CUDA extension); the GPU is synchronized
 before and after each step.
 
 Usage:
-  python examples/speed_ecg5000.py [--threads 10]
+  python experiments/ecg5000_speed.py [--threads 10]
 """
 
 import argparse
@@ -15,9 +15,10 @@ import time
 
 import torch
 
+from torchwarp import UDTW
+from torchwarp._reference import load_reference
+
 import ecg5000_forecast as E
-from torchwarp import uDTW
-from torchwarp.testing import load_reference
 
 WARMUP, STEPS = 3, 30
 
@@ -61,7 +62,7 @@ def main():
     print("uDTW (ECG5000), ms per training step, batch {}".format(cfg["batch_size"]))
     for device in devices:
         ref = step_time(official, cfg, train, device)
-        tw = step_time(uDTW, cfg, train, device)
+        tw = step_time(UDTW, cfg, train, device)
         print("{:4s}  official {:9.2f}  torchwarp {:8.2f}  speed-up {:6.1f}x".format(
             device, ref, tw, ref / tw), flush=True)
 

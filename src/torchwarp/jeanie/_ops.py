@@ -15,7 +15,7 @@ The accumulator R is a differentiable output.
 First-order reverse mode runs the analytic backward kernel (with dL/dR as an
 extra seed). Forward mode, and differentiating *through* a backward pass
 (second and higher orders), use the autograd-native implementation in
-``_diff`` via ``torch.func``, so every derivative is exact. That slower path
+``_autograd`` via ``torch.func``, so every derivative is exact. That slower path
 never runs in ordinary training.
 
 Op outputs: (out, R_diag, R[, G, q_sq, s_sq]). R_diag, G, q_sq, s_sq are
@@ -29,10 +29,9 @@ from typing import Optional, Tuple
 import torch
 from torch import Tensor
 
-from . import _diff, _torch_dp
 from .. import _cuda
 from .._layout import diag_perm, diag_perm_unt
-
+from . import _autograd, _torch_dp
 
 # ------------------------------------------------------------------ helpers
 
@@ -232,8 +231,8 @@ _register_autocast(features_backward)
 #
 # Derivative routing:
 #   reverse, first order  -> *_backward custom op (analytic kernel)
-#   forward mode (jvp)    -> torch.func.jvp of the _diff implementation
-#   through a backward    -> torch.func.vjp/jvp of the _diff implementation
+#   forward mode (jvp)    -> torch.func.jvp of the _autograd implementation
+#   through a backward    -> torch.func.vjp/jvp of the _autograd implementation
 # torch.func.vjp/jvp compose with ordinary autograd and with every
 # torch.func transform, so any nesting stays exact.
 
@@ -265,7 +264,7 @@ def _r_grad(g, natural_R):
 def _first_order_dp(s1, s2, gamma, with_R):
     """(cost, grad_out[, grad_R]) -> d_cost, as a differentiable function."""
     def f(c):
-        return _diff.jeanie(c, s1, s2, gamma)
+        return _autograd.jeanie(c, s1, s2, gamma)
 
     if with_R:
         return lambda c, go, gR: _vjp_of(f, (c,), (go, gR))
@@ -275,7 +274,7 @@ def _first_order_dp(s1, s2, gamma, with_R):
 def _first_order_features(s1, s2, gamma, metric, with_R):
     """(query, support, grad_out[, grad_R]) -> (d_query, d_support)."""
     def f(q, s):
-        return _diff.jeanie_features(q, s, s1, s2, gamma, metric)
+        return _autograd.jeanie_features(q, s, s1, s2, gamma, metric)
 
     if with_R:
         return lambda q, s, go, gR: tuple(_vjp_of(f, (q, s), (go, gR)))
@@ -316,7 +315,7 @@ class DP(torch.autograd.Function):
     def jvp(ctx, t_cost, *_):
         (cost,) = ctx.saved_tensors
         s1, s2, gamma, _, natural_R = ctx.args
-        t_out, t_R = _jvp_of(lambda c: _diff.jeanie(c, s1, s2, gamma),
+        t_out, t_R = _jvp_of(lambda c: _autograd.jeanie(c, s1, s2, gamma),
                              (cost,), (_zeros(t_cost, cost),))
         return t_out, None, (t_R if natural_R else None)
 
@@ -390,7 +389,7 @@ class Features(torch.autograd.Function):
         query, support = ctx.saved_tensors
         s1, s2, gamma, metric, _, natural_R = ctx.args
         t_out, t_R = _jvp_of(
-            lambda q, s: _diff.jeanie_features(q, s, s1, s2, gamma, metric),
+            lambda q, s: _autograd.jeanie_features(q, s, s1, s2, gamma, metric),
             (query, support), (_zeros(t_q, query), _zeros(t_s, support)))
         return t_out, None, (t_R if natural_R else None), None, None, None
 

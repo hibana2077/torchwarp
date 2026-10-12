@@ -4,8 +4,10 @@ import pytest
 import torch
 
 import torchwarp as fast
-from conftest import reference
 from torchwarp import _cuda
+from torchwarp.jeanie.functional import _jeanie_dp, _jeanie_dp_features
+
+from conftest import reference
 
 ref = reference("jeanie")
 
@@ -137,7 +139,7 @@ def test_euclidean_zero_distance_grad_is_finite():
 @pytest.mark.parametrize("backend,device", BACKENDS, ids=IDS)
 def test_gradcheck(backend, device):
     cost = torch.rand(2, 3, 2, 4, 5, dtype=torch.float64, device=device, requires_grad=True)
-    fn = lambda c: fast.jeanie_dp(c, 0.5, 1, 1, backend)[0]
+    fn = lambda c: _jeanie_dp(c, 0.5, 1, 1, backend)[0]
     assert torch.autograd.gradcheck(fn, (cost,))
 
 
@@ -159,8 +161,8 @@ def test_float32_accuracy():
 def test_large_problem_uses_global_scratch():
     # 3 * T * K * 8 bytes > 48 KiB forces the global-memory buffer path.
     cost = torch.rand(2, 25, 1, 90, 95, dtype=torch.float64)
-    a = fast.jeanie_dp(cost, 0.1, 2, 0, "torch")[0]
-    b = fast.jeanie_dp(cost.cuda(), 0.1, 2, 0, "cuda")[0].cpu()
+    a = _jeanie_dp(cost, 0.1, 2, 0, "torch")[0]
+    b = _jeanie_dp(cost.cuda(), 0.1, 2, 0, "cuda")[0].cpu()
     _assert_close(b, a)
 
 
@@ -236,7 +238,7 @@ def test_jeanie_2d_from_features(backend, device, metric):
 def test_fused_features_gradcheck(metric):
     q = torch.randn(2, 2, 2, 4, 3, dtype=torch.float64, device="cuda", requires_grad=True)
     s = torch.randn(2, 5, 3, dtype=torch.float64, device="cuda", requires_grad=True)
-    fn = lambda q, s: fast.jeanie_dp_features(q, s, 0.5, 1, 1, metric, "cuda")[0]
+    fn = lambda q, s: _jeanie_dp_features(q, s, 0.5, 1, 1, metric, "cuda")[0]
     assert torch.autograd.gradcheck(fn, (q, s))
 
 
@@ -244,8 +246,8 @@ def test_fused_features_gradcheck(metric):
 def test_fused_features_large_uses_global_scratch():
     q = torch.randn(2, 25, 1, 90, 8, dtype=torch.float64)
     s = torch.randn(2, 95, 8, dtype=torch.float64)
-    a = fast.jeanie_dp_features(q, s, 0.1, 2, 0, "euclidean", "torch")[0]
-    b = fast.jeanie_dp_features(q.cuda(), s.cuda(), 0.1, 2, 0, "euclidean", "cuda")[0]
+    a = _jeanie_dp_features(q, s, 0.1, 2, 0, "euclidean", "torch")[0]
+    b = _jeanie_dp_features(q.cuda(), s.cuda(), 0.1, 2, 0, "euclidean", "cuda")[0]
     _assert_close(b.cpu(), a)
 
 

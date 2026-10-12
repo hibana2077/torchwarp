@@ -3,9 +3,9 @@
 import pytest
 import torch
 
+from torchwarp import UDTW, _cuda, pairwise_matrices, udtw_from_cost
+
 from conftest import reference
-from torchwarp import uDTW, pairwise_matrices, udtw_from_matrices
-from torchwarp import _cuda
 
 _ref = reference("udtw")
 RefUDTW = _ref.uDTW
@@ -49,7 +49,7 @@ def _assert_all_close(got, want):
 def test_matches_reference(backend, device, N, M, gamma, normalize):
     inputs = _inputs(3, N, M)
     want = _run(RefUDTW(gamma=gamma, normalize=normalize), inputs, "cpu")
-    got = _run(uDTW(gamma=gamma, normalize=normalize, backend=backend), inputs, device)
+    got = _run(UDTW(gamma=gamma, normalize=normalize, backend=backend), inputs, device)
     _assert_all_close(got, want)
 
 
@@ -58,7 +58,7 @@ def test_matches_reference(backend, device, N, M, gamma, normalize):
 def test_bandwidth_matches_reference(backend, device, N, M, bandwidth):
     inputs = _inputs(2, N, M)
     want = _run(RefUDTW(gamma=0.1, bandwidth=bandwidth), inputs, "cpu")
-    got = _run(uDTW(gamma=0.1, bandwidth=bandwidth, backend=backend), inputs, device)
+    got = _run(UDTW(gamma=0.1, bandwidth=bandwidth, backend=backend), inputs, device)
     _assert_all_close(got, want)
 
 
@@ -66,7 +66,7 @@ def test_bandwidth_matches_reference(backend, device, N, M, bandwidth):
 def test_unreachable_band_raises(backend, device):
     inputs = [x.to(device) for x in _inputs(1, 3, 9)]
     with pytest.raises(ValueError):
-        uDTW(gamma=0.1, bandwidth=2, backend=backend)(*inputs)
+        UDTW(gamma=0.1, bandwidth=2, backend=backend)(*inputs)
 
 
 @pytest.mark.parametrize("backend,device", BACKENDS, ids=IDS)
@@ -74,7 +74,7 @@ def test_unreachable_band_raises(backend, device):
 def test_beta(backend, device, beta):
     inputs = _inputs(2, 4, 6)
     want = _run(RefUDTW(gamma=0.1), inputs, "cpu", beta=beta)
-    got = _run(uDTW(gamma=0.1, backend=backend), inputs, device, beta=beta)
+    got = _run(UDTW(gamma=0.1, backend=backend), inputs, device, beta=beta)
     _assert_all_close(got, want)
 
 
@@ -94,7 +94,7 @@ def test_gradcheck(backend, device):
     pen = torch.randn(2, 4, 5, **kw)
 
     def fn(c, p):
-        d, q = udtw_from_matrices(c, p, gamma=0.3, backend=backend)
+        d, q = udtw_from_cost(c, p, gamma=0.3, backend=backend)
         return d, q
 
     assert torch.autograd.gradcheck(fn, (cost, pen))
@@ -105,7 +105,7 @@ def test_gradcheck_with_band(backend, device):
     kw = dict(dtype=torch.float64, device=device, requires_grad=True)
     cost = torch.rand(2, 6, 6, **kw)
     pen = torch.randn(2, 6, 6, **kw)
-    fn = lambda c, p: udtw_from_matrices(c, p, gamma=0.3, bandwidth=1, backend=backend)
+    fn = lambda c, p: udtw_from_cost(c, p, gamma=0.3, bandwidth=1, backend=backend)
     assert torch.autograd.gradcheck(fn, (cost, pen))
 
 
@@ -117,7 +117,7 @@ def test_float32_accuracy():
     truth = _run(RefUDTW(gamma=0.1), inputs, "cpu")
     inputs32 = [x.float() for x in inputs]
     for backend, device in BACKENDS:
-        got = _run(uDTW(gamma=0.1, backend=backend), inputs32, device)
+        got = _run(UDTW(gamma=0.1, backend=backend), inputs32, device)
         for a, b in zip(got, truth):
             err = ((a.double() - b).abs().max() / b.abs().max()).item()
             assert err < 1e-3, (backend, device, err)
@@ -128,8 +128,8 @@ def test_long_sequences_use_global_scratch():
     # 12 * N * 8 bytes > 48 KiB forces the global-memory buffer path.
     cost = torch.rand(2, 600, 610, dtype=torch.float64)
     pen = torch.randn(2, 600, 610, dtype=torch.float64)
-    a = udtw_from_matrices(cost, pen, gamma=0.1, backend="torch")
-    b = udtw_from_matrices(cost.cuda(), pen.cuda(), gamma=0.1, backend="cuda")
+    a = udtw_from_cost(cost, pen, gamma=0.1, backend="torch")
+    b = udtw_from_cost(cost.cuda(), pen.cuda(), gamma=0.1, backend="cuda")
     for x, y in zip(b, a):
         torch.testing.assert_close(x.cpu(), y, atol=1e-8, rtol=1e-10)
 
@@ -141,9 +141,9 @@ def test_long_sequences_use_global_scratch():
 def test_fused_kernel_matches_unfused(N, M, bandwidth, normalize):
     # distance="gemm" on CUDA takes the fused kernel; "diff" the unfused one.
     inputs = _inputs(4, N, M)
-    fused = _run(uDTW(gamma=0.1, bandwidth=bandwidth, normalize=normalize,
+    fused = _run(UDTW(gamma=0.1, bandwidth=bandwidth, normalize=normalize,
                       backend="cuda"), inputs, "cuda")
-    unfused = _run(uDTW(gamma=0.1, bandwidth=bandwidth, normalize=normalize,
+    unfused = _run(UDTW(gamma=0.1, bandwidth=bandwidth, normalize=normalize,
                         backend="cuda", distance="diff"), inputs, "cuda")
     _assert_all_close(fused, unfused)
 
@@ -154,13 +154,13 @@ def test_fused_gradcheck():
     X, Y = torch.rand(2, 4, 3, **kw), torch.rand(2, 6, 3, **kw)
     SX = (0.5 + torch.rand(2, 4, 1, dtype=torch.float64, device="cuda")).requires_grad_()
     SY = (0.5 + torch.rand(2, 6, 1, dtype=torch.float64, device="cuda")).requires_grad_()
-    module = uDTW(gamma=0.3, backend="cuda")
+    module = UDTW(gamma=0.3, backend="cuda")
     assert torch.autograd.gradcheck(lambda *a: module(*a, beta=0.8), (X, Y, SX, SY))
 
 
 def test_only_one_output_used():
     X, Y, SX, SY = [x.requires_grad_(True) for x in _inputs(2, 4, 5)]
-    dist, _ = uDTW(gamma=0.1)(X, Y, SX, SY)
+    dist, _ = UDTW(gamma=0.1)(X, Y, SX, SY)
     dist.sum().backward()
     assert torch.isfinite(X.grad).all() and torch.isfinite(SX.grad).all()
 
@@ -168,10 +168,10 @@ def test_only_one_output_used():
 def test_input_validation():
     X, Y, SX, SY = _inputs(2, 4, 5)
     with pytest.raises(ValueError):
-        uDTW(gamma=0.0)
+        UDTW(gamma=0.0)
     with pytest.raises(ValueError):
-        uDTW(gamma=0.1)(X, Y, SX, SY, beta=-1.0)
+        UDTW(gamma=0.1)(X, Y, SX, SY, beta=-1.0)
     with pytest.raises(ValueError):
-        uDTW(gamma=0.1)(X[0], Y, SX, SY)
+        UDTW(gamma=0.1)(X[0], Y, SX, SY)
     with pytest.raises(ValueError):
-        uDTW(gamma=0.1, backend="nope")
+        UDTW(gamma=0.1, backend="nope")

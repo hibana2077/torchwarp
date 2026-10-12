@@ -44,17 +44,17 @@ Where the speed comes from:
 ## Experiments
 
 These experiments check the implementation on the two tasks of the
-papers; they are run with the scripts in [`examples/`](../examples/).
+papers; they are run with the scripts in [`experiments/`](../experiments/).
 The hyperparameters are the defaults at the top of each script.
 
 ### Data
 
 ```bash
-bash examples/download_data.sh
+bash experiments/download_data.sh
 ```
 
 downloads UCR ECG5000 (about 10 MB) and the NW-UCLA Multiview skeletons
-(about 14 MB) into `examples/data/`.
+(about 14 MB) into `experiments/data/`.
 
 ### Time series forecasting (ECG5000)
 
@@ -79,14 +79,14 @@ and I.2) are available as `--setup paper`:
 
 The paper does not give t′, the number of epochs, the batch size, γ or
 β for this task, and tunes the remaining hyperparameters on a validation
-set. [`examples/tune_ecg5000_paper.py`](../examples/tune_ecg5000_paper.py)
+set. [`experiments/ecg5000_tune.py --setup paper`](../experiments/ecg5000_tune.py)
 does the same on a fixed 400/100 split of the training set (the test set
 is not used): t′ ∈ {30, 50}, batch size ∈ {1, 10, 50}, epochs ∈ {30, 50,
 100}, γ ∈ {0.01, 0.1, 1}, β ∈ {0.01, 0.1, 1}, two seeds per point.
 Euclidean is selected by validation MSE and the alignment losses by
 validation DTW; grid points where a seed diverged are skipped. The
 selected values go into `PAPER_LOSSES` in
-[`examples/ecg5000_forecast.py`](../examples/ecg5000_forecast.py).
+[`experiments/ecg5000_forecast.py`](../experiments/ecg5000_forecast.py).
 
 Test metrics (float64, lower is better): MSE (per time step), SSE
 (summed over the 56 predicted steps), DTW, soft-DTW divergence (γ = 1)
@@ -95,15 +95,15 @@ one fixed SigmaNet trained with the uDTW setting (seed 100), shared by
 all models.
 
 ```bash
-python examples/tune_ecg5000_paper.py count            # 204 grid runs
-python examples/tune_ecg5000_paper.py run --task 0     # one grid run
-python examples/tune_ecg5000_paper.py select           # pick PAPER_LOSSES
+python experiments/ecg5000_tune.py --setup paper count            # 204 grid runs
+python experiments/ecg5000_tune.py --setup paper run --task 0     # one grid run
+python experiments/ecg5000_tune.py --setup paper select           # pick PAPER_LOSSES
 
-python examples/ecg5000_forecast.py --setup paper --loss euclidean --seeds $(seq 0 99)
-python examples/ecg5000_forecast.py --setup paper --loss dtw --seeds $(seq 0 99)
-python examples/ecg5000_forecast.py --setup paper --loss sdtw --seeds $(seq 0 99)
-python examples/ecg5000_forecast.py --setup paper --loss sdtw_div --seeds $(seq 0 99)
-python examples/ecg5000_forecast.py --setup paper --loss udtw --seeds $(seq 0 99)
+python experiments/ecg5000_forecast.py --setup paper --loss euclidean --seeds $(seq 0 99)
+python experiments/ecg5000_forecast.py --setup paper --loss dtw --seeds $(seq 0 99)
+python experiments/ecg5000_forecast.py --setup paper --loss sdtw --seeds $(seq 0 99)
+python experiments/ecg5000_forecast.py --setup paper --loss sdtw_div --seeds $(seq 0 99)
+python experiments/ecg5000_forecast.py --setup paper --loss udtw --seeds $(seq 0 99)
 ```
 
 The previous default setting (ReLU MLP 84 → 256 → 56, PyTorch's default
@@ -127,12 +127,12 @@ skeletons (10 actions, 20 joints, 3 Kinect views).
   to -60°, -30°, 0°, 30° and 60°.
 
 ```bash
-python examples/nwucla_fewshot.py --method sdtw
-python examples/nwucla_fewshot.py --method sdtw_div
-python examples/nwucla_fewshot.py --method udtw
-python examples/nwucla_fewshot.py --method fvm
-python examples/nwucla_fewshot.py --method jeanie --max-shift 1
-python examples/nwucla_fewshot.py --method jeanie --max-shift 2
+python experiments/nwucla_fewshot.py --method sdtw
+python experiments/nwucla_fewshot.py --method sdtw_div
+python experiments/nwucla_fewshot.py --method udtw
+python experiments/nwucla_fewshot.py --method fvm
+python experiments/nwucla_fewshot.py --method jeanie --max-shift 1
+python experiments/nwucla_fewshot.py --method jeanie --max-shift 2
 ```
 
 | method | accuracy (%) |
@@ -155,7 +155,7 @@ python examples/nwucla_fewshot.py --method jeanie --max-shift 2
 | `--eval-epochs` | ECG5000 | Also evaluate after these epochs. |
 | `--threads` | ECG5000 | Number of CPU threads. |
 | `--device` | both | `cuda` (default when available) or `cpu`. |
-| `--out` | both | Output JSON file (default `examples/results/<task>_<method>.json`). |
+| `--out` | both | Output JSON file (default `experiments/results/<task>_<method>.json`). |
 | `--save-ckpt DIR` | both | Save the trained model of each seed to `DIR`. |
 
 Each run writes the configuration, the PyTorch version, and per seed the
@@ -166,26 +166,27 @@ test metrics and the training time to the output JSON.
 The two path figures of the README come from the seed 42 models:
 
 ```bash
-python examples/ecg5000_forecast.py --loss udtw --seeds 42 --save-ckpt examples/results/ckpt
-python examples/nwucla_fewshot.py --method jeanie --seeds 42 --save-ckpt examples/results/ckpt
-python examples/plot_paths.py
+python experiments/ecg5000_forecast.py --loss udtw --seeds 42 --save-ckpt experiments/results/ckpt
+python experiments/ecg5000_plot_paths.py
+python experiments/nwucla_fewshot.py --method jeanie --seeds 42 --save-ckpt experiments/results/ckpt
+python experiments/nwucla_plot_paths.py --query 970 --support 1005 --out assets
 ```
 
-`plot_paths.py` writes `assets/udtw_paths_ecg5000.png` (test series
-`--ecg-index`, default 0) and `assets/viewpoint_paths_nwucla.png`
-(dataset indices `--query` and `--support`, default 970 and 1005, two
-sequences of the action donning).
+`ecg5000_plot_paths.py` writes `assets/udtw_paths_ecg5000.png` (test series
+`--index`, default 0). `nwucla_plot_paths.py` with `--query 970 --support
+1005` writes `assets/viewpoint_paths_nwucla.png` (two sequences of the
+action donning).
 
 To draw the soft-DTW, FVM and JEANIE paths for the whole NW-UCLA test
 split (225 queries of view 3, each with a random support of the same
 action from views 1 and 2):
 
 ```bash
-python examples/plot_jeanie_paths.py
+python experiments/nwucla_plot_paths.py
 ```
 
 The figures and `index.csv` (the distances in each figure) are written to
-`examples/results/figures/nwucla/`. Options: `--support nearest` uses the
+`experiments/results/figures/nwucla/`. Options: `--support nearest` uses the
 same-action support with the smallest JEANIE distance, `--max-shift`
 sets the JEANIE panels (default `1 2`), `--limit N` draws only the first
 N queries, and `--query I --support J` draws one pair.

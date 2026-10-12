@@ -2,7 +2,7 @@
 
 import torch.nn as nn
 
-from .alignment import jeanie_dp_features
+from .functional import _jeanie_dp_features
 
 
 class JEANIE(nn.Module):
@@ -41,7 +41,7 @@ class JEANIE(nn.Module):
             query = query.unsqueeze(2)
         elif query.ndim != 5:
             raise ValueError("query must be [B,K,T,D] or [B,K1,K2,T,D]")
-        out, R = jeanie_dp_features(query, support, self.gamma, self.max_shift[0],
+        out, R = _jeanie_dp_features(query, support, self.gamma, self.max_shift[0],
                                     self.max_shift[1], self.metric, self.backend,
                                     return_accumulator)
         if not return_accumulator:

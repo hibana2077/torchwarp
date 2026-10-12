@@ -1,4 +1,4 @@
-"""Official implementations, used by the test suite as a correctness check.
+"""Official implementations (internal), used by the tests as a correctness check.
 
 The official uDTW and JEANIE code is at github.com/LeiWangR/uDTW and
 github.com/LeiWangR/JEANIE and is not redistributed with torchwarp.
