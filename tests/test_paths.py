@@ -145,3 +145,34 @@ def test_plot_figures():
     fig = plot.viewpoint_figure(q, s, [-60, -30, 0, 30, 60], max_shift=(1, 2))
     assert len(fig.axes) == 4
     plt.close(fig)
+
+
+def test_alignment_plot():
+    matplotlib = pytest.importorskip("matplotlib")
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    torch.manual_seed(0)
+    X, Y = torch.randn(2, 12, 1), torch.randn(2, 15, 1)
+    sx, sy = torch.rand(2, 12, 1) + 0.5, torch.rand(2, 15, 1) + 0.5
+    a = paths.udtw(X, Y, sx, sy, gamma=0.1)
+    for kind, kw in [("alignment", {}), ("uncertainty", {}),
+                     ("twoway", dict(x=X, y=Y, index=1)), ("twoway", dict(x=X[1, :, 0], y=Y[1]))]:
+        fig, ax = plt.subplots()
+        assert a.plot(kind, ax=ax, **kw) is ax
+        plt.close(fig)
+    # one line per path cell, plus the two sequences
+    fig, ax = plt.subplots()
+    a.plot("twoway", x=X, y=Y, ax=ax)
+    assert len(ax.lines) == len(a.optimal_path[0]) + 2
+    plt.close(fig)
+
+    j = paths.jeanie(torch.randn(5, 7, 4), torch.randn(9, 4), max_shift=1)
+    ax = j.plot("path3d")
+    assert ax.name == "3d"
+    plt.close(ax.figure)
+
+    with pytest.raises(ValueError):
+        a.plot("nope")
+    with pytest.raises(ValueError):
+        a.plot("twoway", x=torch.randn(12, 2), y=Y[0])

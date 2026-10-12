@@ -4,7 +4,9 @@
 
 * Python 3.10 or newer
 * PyTorch 2.5 or newer
-* numpy, ninja, matplotlib 3.7 or newer
+* numpy, ninja
+* Optional, for `torchwarp.plot` and `Alignment.plot`: matplotlib 3.7 or
+  newer (`pip install -e ".[plot]"`)
 * For the CUDA kernels: an NVIDIA GPU and a CUDA toolkit (`nvcc`) whose
   major version matches the CUDA version of your PyTorch build. On ROCm
   builds of PyTorch the kernels are hipified automatically.
@@ -18,6 +20,9 @@ git clone https://github.com/hibana2077/torchwarp && cd torchwarp
 pip install -r requirements.txt -e .
 ```
 
+`requirements.txt` includes matplotlib, used by `torchwarp.plot` and the
+experiments.
+
 To choose the CUDA version of PyTorch, install it first, for example:
 
 ```bash
@@ -30,7 +35,7 @@ Pick the PyTorch build with one extra: `cu126`, `cu128` or `cpu`.
 
 ```bash
 git clone https://github.com/hibana2077/torchwarp && cd torchwarp
-uv sync --extra cu126
+uv sync --extra cu126 --extra plot
 ```
 
 Without an extra, PyTorch comes from PyPI, which on Linux is a CUDA 13

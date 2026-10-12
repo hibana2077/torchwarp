@@ -288,85 +288,93 @@ d_div = sdtw(x, y) - 0.5 * (sdtw(x, x) + sdtw(y, y))
 
 ## Visualization
 
-`torchwarp.plot` draws the alignment paths of uDTW, soft-DTW, FVM and
-JEANIE for sequences you pass in. torchwarp does not ship or download
-a pretrained model: the paths depend on the features you give, so use
-features from your own trained model. With untrained features the
-figures can still be drawn but the paths have no meaning.
+Needs matplotlib: `pip install -e ".[plot]"`. A runnable version of the
+code below, on toy data and without training, is
+[`examples/plot_paths.py`](../examples/plot_paths.py).
 
-The two figures below come from the uDTW model trained by
-`experiments/ecg5000_forecast.py` and the JEANIE encoder trained by
-`experiments/nwucla_fewshot.py` (seed 42). To draw them again:
+`torchwarp.paths` returns an `Alignment` with the data to plot;
+`torchwarp.plot` draws it. There are three ways to plot:
 
-```bash
-python experiments/ecg5000_forecast.py --loss udtw --seeds 42 --save-ckpt experiments/results/ckpt
-python experiments/ecg5000_plot_paths.py
-python experiments/nwucla_fewshot.py --method jeanie --seeds 42 --save-ckpt experiments/results/ckpt
-python experiments/nwucla_plot_paths.py --query 970 --support 1005 --out assets
+**1. `Alignment.plot`**: one panel per call, into a given axis.
+
+```python
+import torch
+import matplotlib.pyplot as plt
+from torchwarp import paths
+
+x = torch.sin(torch.linspace(0, 6.28, 40)).view(1, -1, 1)      # [B, N, 1]
+y = torch.sin(torch.linspace(0, 6.28, 50) - 0.8).view(1, -1, 1) # [B, M, 1]
+sx, sy = torch.full_like(x, 0.5), torch.full_like(y, 0.5)       # sigma, [B, N, 1]
+
+a = paths.udtw(x, y, sx, sy, gamma=0.1)
+
+fig, axes = plt.subplots(1, 3, figsize=(12, 3.5))
+a.plot("alignment", ax=axes[0])            # path matrix
+a.plot("uncertainty", ax=axes[1])          # Sigma on the path (uDTW only)
+a.plot("twoway", x=x, y=y, ax=axes[2])     # the sequences joined along the optimal path
 ```
 
-### uDTW
+For viewpoint alignments (`paths.jeanie`, `paths.fvm`,
+`paths.soft_dtw_per_view`), `a.plot("path3d")` draws the optimal path in
+3D (viewpoint, query time, support time).
+
+**2. Figure functions**: the full multi-panel figures of the papers.
 
 ```python
 from torchwarp import plot
 
-# sDTW and uDTW paths for each gamma, and uDTW uncertainty
-fig = plot.udtw_figure(X, Y, sx, sy, gammas=(0.01, 0.1))
-fig.savefig("udtw_paths.png")
+fig = plot.udtw_figure(x, y, sx, sy, gammas=(0.01, 0.1))  # sDTW and uDTW per gamma, uncertainty
+fig = plot.viewpoint_figure(query, support, angles, max_shift=(1, 2))  # soft-DTW, FVM, JEANIE
 ```
 
-The paths are also available as tensors:
+`query` is `[K, T, D]`, `support` is `[U, D]` and `angles` holds one
+label per query viewpoint. To also draw skeletons, pass `query_poses`,
+`support_poses` and `bones`.
+
+**3. By hand**: the fields of `Alignment` are tensors and lists.
 
 ```python
-a = torchwarp.paths.udtw(X, Y, sx, sy, gamma=0.01)
-
-a.path_matrix   # [batch, len_x, len_y]
-a.optimal_path  # per pair: [(i, j), ...]
-a.Sigma         # [batch, len_x, len_y]
+plt.imshow(a.path_matrix[0], origin="lower")
+i, j = zip(*a.optimal_path[0])
+plt.plot(j, i, "w-")
 ```
 
-`a.path_matrix` is
-SoftMinSel<sub>γ</sub>(w, [Π<sub>i</sub>]): the path matrices
-Π<sub>i</sub> of all paths, weighted by the soft-selector of Eq. 3 over
-their path distances w<sub>i</sub>.
-`a.optimal_path` is the path with the smallest distance, a list of
-cells (i, j) per pair. `a.Sigma` holds the variances Σ<sub>ij</sub>.
-`a.path_matrix` is also the gradient of the uDTW distance with respect
-to the cost matrix:
+| field | shape | what to plot | methods |
+| --- | --- | --- | --- |
+| `path_matrix` | `[B, T, U]`, or `[B, K, T, U]` with viewpoints | heatmap of the soft alignment | all |
+| `optimal_path` | per pair, cells `(t, u)` or `(t, u, k)` | line over the heatmap; 3D path or viewpoint over time | all |
+| `D` | as `path_matrix` | heatmap of the cost the paths are computed on | all |
+| `Sigma` | `[B, T, U]` | heatmap of the uncertainty | uDTW |
+| `distance`, `Omega` | `[B]` | values, e.g. in titles or legends | all (`Omega`: uDTW) |
+
+`a.path_matrix` is SoftMinSel<sub>γ</sub>(w, [Π<sub>i</sub>]): the path
+matrices Π<sub>i</sub> of all paths, weighted by the soft-selector of
+Eq. 3 over their path distances w<sub>i</sub>. It is also the gradient
+of the distance with respect to the cost matrix:
 
 ```python
 with torch.no_grad():
-    cost, penalty, Sigma = torchwarp.pairwise_matrices(X, Y, sx, sy)
+    cost, penalty, Sigma = torchwarp.pairwise_matrices(x, y, sx, sy)
 cost.requires_grad_(True)
 
-d, omega = torchwarp.udtw_from_cost(cost, penalty, gamma=0.01)
+d, omega = torchwarp.udtw_from_cost(cost, penalty, gamma=0.1)
 d.sum().backward()
 
 cost.grad  # equals a.path_matrix
 ```
 
+### Figures from trained models
+
+The paths depend on the features you pass in; with untrained features
+the figures can be drawn but have no meaning. The two figures below come
+from the uDTW model trained by `experiments/ecg5000_forecast.py` and the
+JEANIE encoder trained by `experiments/nwucla_fewshot.py` (seed 42); the
+commands are in [benchmarks](benchmarks.md#figures).
+
 ECG5000, forecast of the trained uDTW model vs. ground truth for one
 test series:
 
 ![uDTW paths on ECG5000](../assets/udtw_paths_ecg5000.png)
-
-### JEANIE
-
-```python
-# soft-DTW per view, FVM, and one JEANIE panel per max_shift
-fig = plot.viewpoint_figure(query, support, angles, max_shift=(1, 2))
-fig.savefig("viewpoint_paths.png")
-```
-
-To also draw the skeletons, pass `query_poses`, `support_poses` and
-`bones`. The paths as tensors:
-
-```python
-a = torchwarp.paths.jeanie(query, support, gamma=0.1, max_shift=1)
-
-a.path_matrix   # [batch, views, blocks_q, blocks_s]
-a.optimal_path  # per pair: [(t, u, view), ...]
-```
 
 NW-UCLA, a query and a support sequence of the same action (donning),
 JEANIE with 1-max and 2-max shift:

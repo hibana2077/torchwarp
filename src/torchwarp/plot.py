@@ -3,9 +3,13 @@
 * ``alignment`` / ``uncertainty``: paths in white on black, pixels
   power-normalized, and the uncertainty Sigma on the path with its histogram
   (uDTW, Fig. 2).
+* ``twoway``: two 1-D sequences joined along the optimal path.
 * ``path_3d``: optimal paths in 3D (viewpoint, query time, support time)
   with optional skeletons (JEANIE, Fig. 7).
 * ``udtw_figure`` / ``viewpoint_figure``: the full multi-panel figures.
+
+``Alignment.plot(type)`` calls the first four. Needs matplotlib
+(``pip install torchwarp[plot]``).
 """
 
 import numpy as np
@@ -13,7 +17,7 @@ import torch
 
 from . import paths as _paths
 
-__all__ = ["alignment", "uncertainty", "path_3d", "udtw_figure", "viewpoint_figure",
+__all__ = ["alignment", "uncertainty", "twoway", "path_3d", "udtw_figure", "viewpoint_figure",
            "PATH_COLORS", "VIEW_COLORS"]
 
 PATH_COLORS = ["#f4a582", "#fdd49e", "#b8d8a8", "#a99de0", "#d6a8e0", "#9ecae1", "#fcbba1"]
@@ -24,7 +28,7 @@ def _plt():
     try:
         import matplotlib.pyplot as plt
     except ImportError as exc:  # pragma: no cover
-        raise ImportError("torchwarp.plot needs matplotlib: pip install matplotlib") from exc
+        raise ImportError("torchwarp.plot needs matplotlib: pip install torchwarp[plot]") from exc
     return plt
 
 
@@ -103,6 +107,44 @@ def uncertainty(a, index=0, ax=None, power=0.1, threshold=0.6, hist=True, title=
             ins.spines[side].set_linewidth(0.4)
     if title:
         ax.set_title(title, y=-0.16, fontsize=10)
+    return ax
+
+
+def _sequence(x, index):
+    x = _np(x)
+    if x.ndim == 3:                          # batched [B, N, 1]
+        x = x[index]
+    if x.ndim == 2 and x.shape[1] == 1:
+        x = x[:, 0]
+    if x.ndim != 1:
+        raise ValueError("twoway() needs one value per time step, e.g. x[..., 0]")
+    return x
+
+
+def twoway(a, x, y, index=0, ax=None, offset=None, step=1, title=None):
+    """Two 1-D sequences, y drawn below x, joined along the optimal path.
+
+    x [N] (or [N, 1], [B, N, 1]) and y [M] are the sequences the alignment
+    was computed on; each cell (i, j) of ``a.optimal_path[index]`` draws a
+    line from x[i] to y[j], every ``step`` cells. ``offset``: vertical gap
+    between the two sequences (default: 1.2 times the larger value range).
+    """
+    plt = _plt()
+    ax = ax or plt.gca()
+    x, y = _sequence(x, index), _sequence(y, index)
+    if offset is None:
+        offset = 1.2 * max(np.ptp(x), np.ptp(y), 1e-12)
+    y = y - offset
+    for cell in a.optimal_path[index][::step]:
+        i, j = cell[0], cell[1]
+        ax.plot([i, j], [x[i], y[j]], color="#999999", lw=0.6, zorder=1)
+    ax.plot(x, color=VIEW_COLORS[0], lw=1.6, label="x", zorder=2)
+    ax.plot(y, color=VIEW_COLORS[3], lw=1.6, label="y", zorder=2)
+    ax.set_yticks([])
+    ax.set_xlabel("time step")
+    ax.legend(loc="upper right", fontsize=8, frameon=False)
+    if title:
+        ax.set_title(title, fontsize=10)
     return ax
 
 

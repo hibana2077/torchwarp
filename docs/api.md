@@ -21,7 +21,7 @@ Contents:
 * soft-DTW: [`soft_dtw`](#soft_dtw)
 * Base distances: [`euclidean_cost`](#euclidean_cost), [`squared_euclidean_cost`](#squared_euclidean_cost), [`rbf_cost`](#rbf_cost)
 * [`torchwarp.paths`](#torchwarppaths): [`Alignment`](#alignment), [`udtw`](#pathsudtw), [`soft_dtw`](#pathssoft_dtw), [`soft_dtw_per_view`](#pathssoft_dtw_per_view), [`fvm`](#pathsfvm), [`jeanie`](#pathsjeanie), [`optimal_path`](#pathsoptimal_path)
-* [`torchwarp.plot`](#torchwarpplot): [`udtw_figure`](#plotudtw_figure), [`viewpoint_figure`](#plotviewpoint_figure), [`alignment`](#plotalignment), [`uncertainty`](#plotuncertainty), [`path_3d`](#plotpath_3d)
+* [`torchwarp.plot`](#torchwarpplot): [`udtw_figure`](#plotudtw_figure), [`viewpoint_figure`](#plotviewpoint_figure), [`alignment`](#plotalignment), [`uncertainty`](#plotuncertainty), [`twoway`](#plottwoway), [`path_3d`](#plotpath_3d)
 
 ---
 
@@ -379,6 +379,18 @@ dimension).
 | `Omega` | `[B]` | Penalty β Ω (uDTW only, otherwise `None`). |
 | `angles` | list | Viewpoint labels, if given. |
 
+**Method** `plot(type="alignment", **kwargs)` draws the alignment with
+`torchwarp.plot` (needs matplotlib) and returns the matplotlib axis.
+`type` is `"alignment"` ([`plot.alignment`](#plotalignment)),
+`"uncertainty"` ([`plot.uncertainty`](#plotuncertainty), uDTW only),
+`"twoway"` ([`plot.twoway`](#plottwoway), pass `x` and `y`) or
+`"path3d"` ([`plot.path_3d`](#plotpath_3d)); `kwargs` go to that function.
+
+```python
+a = torchwarp.paths.udtw(X, Y, sx, sy, gamma=0.1)
+a.plot("twoway", x=X, y=Y, index=0)
+```
+
 ### `paths.udtw`
 
 ```python
@@ -439,7 +451,7 @@ Paths with the smallest distance for `D [B, T, U]` (cells `(t, u)`) or
 
 ## `torchwarp.plot`
 
-The panel functions draw
+Needs matplotlib (`pip install torchwarp[plot]`). The panel functions draw
 into a given matplotlib axis (or the current one) and return it; the
 figure functions create and return a `matplotlib.figure.Figure`.
 
@@ -500,6 +512,18 @@ torchwarp.plot.uncertainty(a, index=0, ax=None, power=0.1, threshold=0.6,
 
 The binarized path of a uDTW `Alignment` multiplied by Σ (white = high
 uncertainty), with a histogram of Σ on the path when `hist=True`.
+
+### `plot.twoway`
+
+```python
+torchwarp.plot.twoway(a, x, y, index=0, ax=None, offset=None, step=1, title=None)
+```
+
+The two sequences of pair `index`, `y` drawn `offset` below `x`, with a
+line from x<sub>i</sub> to y<sub>j</sub> for every `step`-th cell (i, j)
+of `a.optimal_path[index]`. `x` and `y` need one value per time step:
+`[N]`, `[N, 1]` or `[B, N, 1]` (for more features, pass one, e.g.
+`X[..., 0]`). `offset` defaults to 1.2 times the larger value range.
 
 ### `plot.path_3d`
 

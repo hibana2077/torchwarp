@@ -54,6 +54,23 @@ class Alignment:
     Omega: Optional[torch.Tensor] = None
     angles: Optional[list] = field(default=None)
 
+    def plot(self, type="alignment", **kwargs):
+        """Plot this alignment with ``torchwarp.plot`` (needs matplotlib).
+
+        type: "alignment" (path matrix), "uncertainty" (Sigma on the path,
+        uDTW only), "twoway" (two 1-D sequences joined along the optimal
+        path; pass ``x`` and ``y``) or "path3d" (optimal path in 3D, for
+        viewpoint alignments). Keyword arguments go to that function, e.g.
+        ``index`` (batch item) and ``ax``. Returns the matplotlib axis.
+        """
+        from . import plot
+
+        fns = {"alignment": plot.alignment, "uncertainty": plot.uncertainty,
+               "twoway": plot.twoway, "path3d": plot.path_3d}
+        if type not in fns:
+            raise ValueError("type must be one of {}".format(sorted(fns)))
+        return fns[type](self, **kwargs)
+
 
 def _value_and_grad(fn, D):
     """d = fn(D) and its gradient with respect to D."""

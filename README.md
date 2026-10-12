@@ -17,7 +17,7 @@ This repository includes uDTW, JEANIE and FVM, together with examples and the ex
 From the repository root:
 
 ```bash
-pip install -e .
+pip install -e .            # or -e ".[plot]" to also install matplotlib for torchwarp.plot
 ```
 
 CUDA acceleration needs a CUDA-enabled PyTorch build and a CUDA toolkit (`nvcc`) of the same major version; without them torchwarp runs on its PyTorch backend. For CUDA-specific PyTorch builds, uv installation, and optional dependencies, see the [installation guide](docs/installation.md).
@@ -160,7 +160,12 @@ Short scripts to copy from (CPU or GPU):
 ```bash
 python examples/quickstart_udtw.py     # uDTW as a training loss with a learned uncertainty
 python examples/quickstart_jeanie.py   # JEANIE and FVM in a 5-way 1-shot episode
+python examples/plot_paths.py          # plot the paths of uDTW and JEANIE (needs matplotlib)
 ```
+
+Every function in `torchwarp.paths` returns an `Alignment` that can draw
+itself, e.g. `a.plot("twoway", x=X, y=Y)`; see
+[Visualization](docs/usage.md#visualization).
 
 ## Experiments
 
