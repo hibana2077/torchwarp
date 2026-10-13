@@ -2746,11 +2746,8 @@ wheels = [
 
 [[package]]
 name = "torchwarp"
-version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "matplotlib", version = "3.10.9", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11' or (extra == 'extra-9-torchwarp-cpu' and extra == 'extra-9-torchwarp-cu126') or (extra == 'extra-9-torchwarp-cpu' and extra == 'extra-9-torchwarp-cu128') or (extra == 'extra-9-torchwarp-cu126' and extra == 'extra-9-torchwarp-cu128')" },
-    { name = "matplotlib", version = "3.11.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11' or (extra == 'extra-9-torchwarp-cpu' and extra == 'extra-9-torchwarp-cu126') or (extra == 'extra-9-torchwarp-cpu' and extra == 'extra-9-torchwarp-cu128') or (extra == 'extra-9-torchwarp-cu126' and extra == 'extra-9-torchwarp-cu128')" },
     { name = "ninja" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11' or (extra == 'extra-9-torchwarp-cpu' and extra == 'extra-9-torchwarp-cu126') or (extra == 'extra-9-torchwarp-cpu' and extra == 'extra-9-torchwarp-cu128') or (extra == 'extra-9-torchwarp-cu126' and extra == 'extra-9-torchwarp-cu128')" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*' or (extra == 'extra-9-torchwarp-cpu' and extra == 'extra-9-torchwarp-cu126') or (extra == 'extra-9-torchwarp-cpu' and extra == 'extra-9-torchwarp-cu128') or (extra == 'extra-9-torchwarp-cu126' and extra == 'extra-9-torchwarp-cu128')" },
@@ -2773,9 +2770,15 @@ cu126 = [
 cu128 = [
     { name = "torch", version = "2.11.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" } },
 ]
+plot = [
+    { name = "matplotlib", version = "3.10.9", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11' or (extra == 'extra-9-torchwarp-cpu' and extra == 'extra-9-torchwarp-cu126') or (extra == 'extra-9-torchwarp-cpu' and extra == 'extra-9-torchwarp-cu128') or (extra == 'extra-9-torchwarp-cu126' and extra == 'extra-9-torchwarp-cu128')" },
+    { name = "matplotlib", version = "3.11.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11' or (extra == 'extra-9-torchwarp-cpu' and extra == 'extra-9-torchwarp-cu126') or (extra == 'extra-9-torchwarp-cpu' and extra == 'extra-9-torchwarp-cu128') or (extra == 'extra-9-torchwarp-cu126' and extra == 'extra-9-torchwarp-cu128')" },
+]
 
 [package.dev-dependencies]
 dev = [
+    { name = "matplotlib", version = "3.10.9", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11' or (extra == 'extra-9-torchwarp-cpu' and extra == 'extra-9-torchwarp-cu126') or (extra == 'extra-9-torchwarp-cpu' and extra == 'extra-9-torchwarp-cu128') or (extra == 'extra-9-torchwarp-cu126' and extra == 'extra-9-torchwarp-cu128')" },
+    { name = "matplotlib", version = "3.11.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11' or (extra == 'extra-9-torchwarp-cpu' and extra == 'extra-9-torchwarp-cu126') or (extra == 'extra-9-torchwarp-cpu' and extra == 'extra-9-torchwarp-cu128') or (extra == 'extra-9-torchwarp-cu126' and extra == 'extra-9-torchwarp-cu128')" },
     { name = "pytest" },
     { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11' or (extra == 'extra-9-torchwarp-cpu' and extra == 'extra-9-torchwarp-cu126') or (extra == 'extra-9-torchwarp-cpu' and extra == 'extra-9-torchwarp-cu128') or (extra == 'extra-9-torchwarp-cu126' and extra == 'extra-9-torchwarp-cu128')" },
     { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*' or (extra == 'extra-9-torchwarp-cpu' and extra == 'extra-9-torchwarp-cu126') or (extra == 'extra-9-torchwarp-cpu' and extra == 'extra-9-torchwarp-cu128') or (extra == 'extra-9-torchwarp-cu126' and extra == 'extra-9-torchwarp-cu128')" },
@@ -2784,7 +2787,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "matplotlib", specifier = ">=3.7" },
+    { name = "matplotlib", marker = "extra == 'plot'", specifier = ">=3.7" },
     { name = "ninja" },
     { name = "numpy" },
     { name = "torch", specifier = ">=2.5" },
@@ -2792,10 +2795,11 @@ requires-dist = [
     { name = "torch", marker = "extra == 'cu126'", specifier = ">=2.5", index = "https://download.pytorch.org/whl/cu126", conflict = { package = "torchwarp", extra = "cu126" } },
     { name = "torch", marker = "extra == 'cu128'", specifier = ">=2.5", index = "https://download.pytorch.org/whl/cu128", conflict = { package = "torchwarp", extra = "cu128" } },
 ]
-provides-extras = ["cpu", "cu126", "cu128"]
+provides-extras = ["cpu", "cu126", "cu128", "plot"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "matplotlib", specifier = ">=3.7" },
     { name = "pytest", specifier = ">=8" },
     { name = "scipy" },
 ]
