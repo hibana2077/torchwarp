@@ -21,7 +21,7 @@ if torch.cuda.is_available():
 if HAS_CUDA:
     BACKENDS.append(("cuda", "cuda"))
 IDS = ["{}-{}".format(b, d) for b, d in BACKENDS]
-DISTANCES = ["gemm", "diff"]  # fused op / DP op on materialised matrices
+METHODS = ["gemm", "diff"]  # fused op / DP op on materialised matrices
 
 f64 = dict(dtype=torch.float64)
 
@@ -47,9 +47,9 @@ def _scalar(module, beta=0.8):
 # ----------------------------------------------------- higher-order gradients
 
 @pytest.mark.parametrize("backend,device", BACKENDS, ids=IDS)
-@pytest.mark.parametrize("distance", DISTANCES)
+@pytest.mark.parametrize("method", METHODS)
 @pytest.mark.parametrize("normalize,bandwidth", [(False, None), (True, None), (False, 2)])
-def test_maml_meta_gradient(backend, device, distance, normalize, bandwidth):
+def test_maml_meta_gradient(backend, device, method, normalize, bandwidth):
     X, Y, SX, SY = _inputs()
     W0 = torch.randn(4, 4, generator=torch.Generator().manual_seed(1), **f64)
 
@@ -63,13 +63,13 @@ def test_maml_meta_gradient(backend, device, distance, normalize, bandwidth):
 
     kw = dict(gamma=0.3, normalize=normalize, bandwidth=bandwidth)
     want = meta_grad(RefUDTW(**kw), "cpu")
-    got = meta_grad(UDTW(backend=backend, distance=distance, **kw), device)
+    got = meta_grad(UDTW(backend=backend, method=method, **kw), device)
     _close(got, want)
 
 
 @pytest.mark.parametrize("backend,device", BACKENDS, ids=IDS)
-@pytest.mark.parametrize("distance", DISTANCES)
-def test_third_derivative(backend, device, distance):
+@pytest.mark.parametrize("method", METHODS)
+def test_third_derivative(backend, device, method):
     X, Y, SX, SY = _inputs(seed=3)
     V = torch.randn_like(X)
 
@@ -81,7 +81,7 @@ def test_third_derivative(backend, device, distance):
             y, = torch.autograd.grad(y, t, create_graph=True)
         return y.detach().cpu()
 
-    _close(d3(UDTW(gamma=0.5, backend=backend, distance=distance), device),
+    _close(d3(UDTW(gamma=0.5, backend=backend, method=method), device),
            d3(RefUDTW(gamma=0.5), "cpu"), tol=1e-7)
 
 
@@ -106,11 +106,11 @@ def _ref_loss(X):
 
 
 @pytest.mark.parametrize("backend,device", BACKENDS, ids=IDS)
-@pytest.mark.parametrize("distance", DISTANCES)
-def test_torch_func_transforms(backend, device, distance):
+@pytest.mark.parametrize("method", METHODS)
+def test_torch_func_transforms(backend, device, method):
     X, Y, SX, SY = _inputs(B=1, N=3, M=4, D=2)
     rest = tuple(t.to(device) for t in (Y, SX, SY))
-    fast = UDTW(gamma=0.4, backend=backend, distance=distance)
+    fast = UDTW(gamma=0.4, backend=backend, method=method)
     f = lambda x: _scalar(fast)(x, *rest)
     x = X.to(device)
 
@@ -127,11 +127,11 @@ def test_torch_func_transforms(backend, device, distance):
 
 
 @pytest.mark.parametrize("backend,device", BACKENDS, ids=IDS)
-@pytest.mark.parametrize("distance", DISTANCES)
-def test_vmap(backend, device, distance):
+@pytest.mark.parametrize("method", METHODS)
+def test_vmap(backend, device, method):
     X, Y, SX, SY = (t.to(device) for t in _inputs(B=2, N=4, M=5))
     stack = lambda t: torch.stack([t, 1.1 * t, 0.9 * t])
-    fast = UDTW(gamma=0.3, backend=backend, distance=distance)
+    fast = UDTW(gamma=0.3, backend=backend, method=method)
     d, p = torch.func.vmap(lambda *a: fast(*a, beta=0.5))(stack(X), stack(Y), stack(SX), stack(SY))
     for k in range(3):
         dk, pk = RefUDTW(gamma=0.3)(*(stack(t)[k].cpu() for t in (X, Y, SX, SY)), beta=0.5)
@@ -147,11 +147,11 @@ def test_vmap(backend, device, distance):
 # ------------------------------------------------- torch.compile and autocast
 
 @pytest.mark.parametrize("backend,device", BACKENDS, ids=IDS)
-@pytest.mark.parametrize("distance", DISTANCES)
-def test_torch_compile_fullgraph(backend, device, distance):
+@pytest.mark.parametrize("method", METHODS)
+def test_torch_compile_fullgraph(backend, device, method):
     torch._dynamo.reset()
     X, Y, SX, SY = (t.to(device).requires_grad_() for t in _inputs(B=3, N=5, M=7))
-    fast = UDTW(gamma=0.3, normalize=True, backend=backend, distance=distance)
+    fast = UDTW(gamma=0.3, normalize=True, backend=backend, method=method)
     f = _scalar(fast)
     compiled = torch.compile(f, fullgraph=True)
     want = f(X, Y, SX, SY)
@@ -165,8 +165,8 @@ def test_torch_compile_fullgraph(backend, device, distance):
 def test_autocast_runs_in_float32():
     X, Y, SX, SY = (t.float().cuda().requires_grad_() for t in _inputs(B=2, N=5, M=6))
     lin = torch.nn.Linear(4, 4).cuda()
-    for distance in DISTANCES:
-        m = UDTW(gamma=0.3, distance=distance)
+    for method in METHODS:
+        m = UDTW(gamma=0.3, method=method)
         with torch.autocast("cuda", dtype=torch.float16):
             d, p = m(lin(X), lin(Y), SX, SY)
         assert d.dtype == torch.float32 and p.dtype == torch.float32
@@ -178,7 +178,7 @@ def test_autocast_runs_in_float32():
 
 
 def test_pairwise_matrices_path_is_differentiable_twice():
-    # distance="diff" builds matrices in PyTorch; gradients of every order
+    # method="diff" builds matrices in PyTorch; gradients of every order
     # flow through pairwise_matrices and the DP op.
     X, Y, SX, SY = (t.requires_grad_() for t in _inputs(B=1, N=3, M=3, D=2))
     f = lambda *a: udtw_from_cost(*pairwise_matrices(*a, beta=0.5)[:2], gamma=0.4)

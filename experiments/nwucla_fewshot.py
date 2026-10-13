@@ -144,7 +144,8 @@ def make_distance(method, cfg, sigma_head):
         nq, ns = q.shape[0], s.shape[0]
         if method == "jeanie":
             qq, ss = all_pairs(q, s)
-            return torchwarp.jeanie_1d_from_features(qq, ss, gamma, cfg["max_shift"]).view(nq, ns)
+            return torchwarp.jeanie_1d_from_features(
+                qq, ss, gamma=gamma, max_shift=cfg["max_shift"]).view(nq, ns)
         if method == "fvm":
             qq, ss = all_pairs(q, s)
             return torchwarp.fvm_query_only_1d(torchwarp.euclidean_cost(qq, ss), gamma).view(nq, ns)

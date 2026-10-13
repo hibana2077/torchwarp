@@ -15,6 +15,7 @@ This repository provides implementations of uDTW, JEANIE, and FVM, along with us
 ## Features
 
 - **uDTW, JEANIE and FVM:** differentiable alignment, with forward values and gradients validated against the original implementations (see `tests/`).
+- **Same API as the official code:** every name in the official `udtw` and `jeanie` packages exists in `torchwarp` with the same arguments, so changing the import is enough. `SoftDTW` takes the arguments of pytorch-softdtw-cuda's `SoftDTW`.
 - **CUDA acceleration:** up to 963× faster training steps in the NW-UCLA benchmark (see [Results](#results)).
 - **Examples and experiments:** short usage examples in `examples/`; ECG5000 forecasting and NW-UCLA few-shot action recognition in `experiments/`, with alignment visualizations.
 

@@ -39,7 +39,7 @@ def _assert_close(a, b):
 def test_soft_dtw(backend, device, T, U, gamma):
     cost = torch.rand(T, U, dtype=torch.float64)
     v_ref, g_ref = _value_and_grad(lambda c: ref.soft_dtw(c, gamma), cost, "cpu")
-    v, g = _value_and_grad(lambda c: fast.soft_dtw(c, gamma, backend), cost, device)
+    v, g = _value_and_grad(lambda c: fast.soft_dtw(c, gamma, backend=backend), cost, device)
     _assert_close(v, v_ref)
     _assert_close(g, g_ref)
 
@@ -198,7 +198,8 @@ def test_jeanie_1d_from_features(backend, device, metric, K, T, U, shift):
     g_ref = torch.autograd.grad(d_ref.sum(), (qa, sa))
 
     qb, sb = q.to(device).requires_grad_(), s.to(device).requires_grad_()
-    d = fast.jeanie_1d_from_features(qb, sb, 0.1, shift, metric=metric, backend=backend)
+    d = fast.jeanie_1d_from_features(qb, sb, gamma=0.1, max_shift=shift, metric=metric,
+                                     backend=backend)
     g = torch.autograd.grad(d.sum(), (qb, sb))
     _assert_close(d.detach().cpu(), d_ref.detach())
     for a, b in zip(g, g_ref):
@@ -221,7 +222,7 @@ def test_jeanie_2d_from_features(backend, device, metric):
     d_ref = reference(qa, sa)
     g_ref = torch.autograd.grad(d_ref.sum(), (qa, sa))
     qb, sb = q.to(device).requires_grad_(), s.to(device).requires_grad_()
-    d, acc = fast.jeanie_2d_from_features(qb, sb, 0.1, 1, 1, metric=metric,
+    d, acc = fast.jeanie_2d_from_features(qb, sb, gamma=0.1, max_shift_az=1, max_shift_alt=1, metric=metric,
                                           return_accumulator=True, backend=backend)
     g = torch.autograd.grad(d.sum(), (qb, sb))
     _assert_close(d.detach().cpu(), d_ref.detach())
@@ -255,7 +256,7 @@ def test_fused_features_large_uses_global_scratch():
 def test_features_zero_distance_grad_is_finite(backend, device):
     q = torch.ones(1, 2, 3, 4, dtype=torch.float64, device=device, requires_grad=True)
     s = torch.ones(1, 3, 4, dtype=torch.float64, device=device, requires_grad=True)
-    fast.jeanie_1d_from_features(q, s, 0.1, 1, backend=backend).sum().backward()
+    fast.jeanie_1d_from_features(q, s, gamma=0.1, max_shift=1, backend=backend).sum().backward()
     assert torch.isfinite(q.grad).all() and torch.isfinite(s.grad).all()
 
 

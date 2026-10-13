@@ -3,10 +3,12 @@
 uncertainty-DTW (uDTW, ECCV 2022) and JEANIE (IJCV 2024) were proposed by
 Lei Wang, Piotr Koniusz et al. The official code is at github.com/LeiWangR.
 This package also provides soft-DTW and Free Viewpoint Matching, with
-CUDA/HIP kernels and a portable PyTorch backend.
+CUDA/HIP kernels and a portable PyTorch backend. Functions and classes that
+exist in the official code keep its names and positional arguments;
+options added by torchwarp are keyword-only.
 """
 
-from . import paths
+from . import paths, plot
 from .jeanie import (
     JEANIE,
     euclidean_cost,
@@ -22,7 +24,7 @@ from .jeanie import (
     rbf_cost,
     squared_euclidean_cost,
 )
-from .sdtw import soft_dtw
+from .sdtw import SoftDTW, soft_dtw, softmin, softmin_weights
 from .udtw import (
     UDTW,
     pairwise_matrices,
@@ -47,7 +49,10 @@ __all__ = [
     "jeanie_2d_from_cost",
     "jeanie_2d_from_features",
     # soft-DTW / FVM / distances
+    "SoftDTW",
     "soft_dtw",
+    "softmin",
+    "softmin_weights",
     "fvm_from_cost",
     "fvm_1d_from_cost",
     "fvm_2d_from_cost",
@@ -58,4 +63,5 @@ __all__ = [
     "rbf_cost",
     # modules
     "paths",
+    "plot",
 ]

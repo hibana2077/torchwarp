@@ -12,6 +12,8 @@ analytic first-order backward, exact higher-order gradients, and support
 for torch.compile, torch.func and autocast.
 """
 
+from typing import NamedTuple
+
 import torch
 
 from . import _ops
@@ -19,11 +21,21 @@ from . import _ops
 _BACKENDS = ("auto", "cuda", "torch")
 
 
+class UDTWOutput(NamedTuple):
+    """Result of uDTW: ``distance`` [B] and the beta-weighted ``penalty`` [B].
+
+    A tuple, so ``d, omega = ...`` also works.
+    """
+
+    distance: torch.Tensor
+    penalty: torch.Tensor
+
+
 def _check_sequence_inputs(X, Y, Sigma_X, Sigma_Y):
     if X.ndim != 3 or Y.ndim != 3:
         raise ValueError("X and Y must have shape [batch, time, feature]")
     if Sigma_X.ndim != 3 or Sigma_Y.ndim != 3:
-        raise ValueError("Sigma_X and Sigma_Y must have shape [batch, time, 1]")
+        raise ValueError("the uncertainties sigma must have shape [batch, time, 1]")
     if X.shape[0] != Y.shape[0]:
         raise ValueError("X and Y must have the same batch size")
     if X.shape[2] != Y.shape[2]:
@@ -31,11 +43,11 @@ def _check_sequence_inputs(X, Y, Sigma_X, Sigma_Y):
     if Sigma_X.shape[:2] != X.shape[:2] or Sigma_Y.shape[:2] != Y.shape[:2]:
         raise ValueError("uncertainty tensors must match batch/time dimensions")
     if Sigma_X.shape[2] != 1 or Sigma_Y.shape[2] != 1:
-        raise ValueError("Sigma_X and Sigma_Y must have shape [batch,time,1]")
+        raise ValueError("the uncertainties sigma must have shape [batch, time, 1]")
     if not X.is_floating_point() or not Y.is_floating_point():
         raise TypeError("X and Y must be floating-point tensors")
     if not Sigma_X.is_floating_point() or not Sigma_Y.is_floating_point():
-        raise TypeError("Sigma_X and Sigma_Y must be floating-point tensors")
+        raise TypeError("the uncertainties sigma must be floating-point tensors")
 
 
 def _check_hyperparameters(gamma, beta, bandwidth):
@@ -62,7 +74,7 @@ def _squared_euclidean(X, Y, method="gemm"):
     return torch.baddbmm(x2 + y2, X, Y.transpose(1, 2), alpha=-2.0).clamp_min(0)
 
 
-def pairwise_matrices(X, Y, Sigma_X, Sigma_Y, beta=1.0, eps=1e-8, method="gemm"):
+def pairwise_matrices(X, Y, Sigma_X, Sigma_Y, beta=1.0, eps=1e-8, *, method="gemm"):
     """Uncertainty-weighted cost, beta-weighted log-variance penalty, variance.
 
     Eq. (8):  Sigma_ij = 0.5 * (sigma_i^2 + sigma'_j^2)
@@ -88,7 +100,7 @@ def _check_band_reached(distance, band):
             )
 
 
-def udtw_from_cost(cost, penalty, gamma=1.0, bandwidth=None, backend="auto"):
+def udtw_from_cost(cost, penalty, *, gamma=1.0, bandwidth=None, backend="auto"):
     """Run the uDTW dynamic program on precomputed matrices.
 
     Args:
@@ -99,7 +111,7 @@ def udtw_from_cost(cost, penalty, gamma=1.0, bandwidth=None, backend="auto"):
         backend: "auto" (CUDA kernel when possible), "cuda" or "torch".
 
     Returns:
-        (distance [B], penalty [B]).
+        UDTWOutput(distance [B], penalty [B]).
 
     Use this directly for custom cost/variance constructions such as the
     jointly generated variance of Eq. (9).
@@ -128,17 +140,21 @@ def udtw_from_cost(cost, penalty, gamma=1.0, bandwidth=None, backend="auto"):
     band = 0.0 if bandwidth is None else float(bandwidth)
     distance, pen, _, _ = _ops.dp_apply(cost, penalty, float(gamma), band, backend)
     _check_band_reached(distance, band)
-    return distance, pen
+    return UDTWOutput(distance, pen)
 
 
-def udtw_from_features(X, Y, Sigma_X, Sigma_Y, beta=1.0, gamma=1.0, bandwidth=None,
+def udtw_from_features(X, Y, sigma_x, sigma_y, *, beta=1.0, gamma=1.0, bandwidth=None,
                        eps=1e-8, backend="auto"):
     """uDTW with the cost and penalty built inside the kernel (Eqs. 8, 16).
 
-    Same result as ``udtw_from_cost(*pairwise_matrices(...)[:2])`` but
-    without materialising the [B,N,M] cost/penalty/variance tensors.
+    X [B,N,D], Y [B,M,D]; sigma_x [B,N,1], sigma_y [B,M,1] positive standard
+    deviations. Same result as ``udtw_from_cost(*pairwise_matrices(...)[:2])``
+    but without materialising the [B,N,M] cost/penalty/variance tensors.
+
+    Returns:
+        UDTWOutput(distance [B], penalty [B]).
     """
-    _check_sequence_inputs(X, Y, Sigma_X, Sigma_Y)
+    _check_sequence_inputs(X, Y, sigma_x, sigma_y)
     _check_hyperparameters(gamma, beta, bandwidth)
     if eps <= 0:
         raise ValueError("eps must be > 0")
@@ -147,17 +163,17 @@ def udtw_from_features(X, Y, Sigma_X, Sigma_Y, beta=1.0, gamma=1.0, bandwidth=No
     if X.shape[1] == 0 or Y.shape[1] == 0:
         raise ValueError("sequence lengths must be non-zero")
     if X.shape[1] > Y.shape[1]:  # symmetric problem; keep N <= M
-        X, Y, Sigma_X, Sigma_Y = Y, X, Sigma_Y, Sigma_X
+        X, Y, sigma_x, sigma_y = Y, X, sigma_y, sigma_x
     dtype = X.dtype if X.dtype in (torch.float32, torch.float64) else torch.float32
     X, Y = X.to(dtype), Y.to(dtype)
     if Y is X:
         # d(X, X) for normalize=True: torch.compile cannot trace an
         # autograd.Function that receives the same tensor twice.
         Y = X.view_as(X)
-    vx = Sigma_X.squeeze(-1).to(dtype).pow(2)
-    vy = Sigma_Y.squeeze(-1).to(dtype).pow(2)
+    vx = sigma_x.squeeze(-1).to(dtype).pow(2)
+    vy = sigma_y.squeeze(-1).to(dtype).pow(2)
     band = 0.0 if bandwidth is None else float(bandwidth)
     distance, pen, *_ = _ops.fused_apply(
         X, Y, vx, vy, float(gamma), float(beta), float(eps), band, backend)
     _check_band_reached(distance, band)
-    return distance, pen
+    return UDTWOutput(distance, pen)

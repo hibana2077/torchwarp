@@ -139,12 +139,12 @@ def test_long_sequences_use_global_scratch():
     (12, 15, None, False), (15, 12, None, True), (9, 9, 2, False), (33, 33, None, True),
 ])
 def test_fused_kernel_matches_unfused(N, M, bandwidth, normalize):
-    # distance="gemm" on CUDA takes the fused kernel; "diff" the unfused one.
+    # method="gemm" on CUDA takes the fused kernel; "diff" the unfused one.
     inputs = _inputs(4, N, M)
     fused = _run(UDTW(gamma=0.1, bandwidth=bandwidth, normalize=normalize,
                       backend="cuda"), inputs, "cuda")
     unfused = _run(UDTW(gamma=0.1, bandwidth=bandwidth, normalize=normalize,
-                        backend="cuda", distance="diff"), inputs, "cuda")
+                        backend="cuda", method="diff"), inputs, "cuda")
     _assert_all_close(fused, unfused)
 
 

@@ -1,6 +1,6 @@
 """Uncertainty-DTW (ECCV 2022)."""
 
-from .functional import pairwise_matrices, udtw_from_cost, udtw_from_features
+from .functional import UDTWOutput, pairwise_matrices, udtw_from_cost, udtw_from_features
 from .module import UDTW, uDTW
 
 __all__ = [
@@ -9,4 +9,5 @@ __all__ = [
     "udtw_from_cost",
     "udtw_from_features",
     "pairwise_matrices",
+    "UDTWOutput",
 ]

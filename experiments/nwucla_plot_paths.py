@@ -75,7 +75,7 @@ def nearest_support(data, q, candidates, gamma, max_shift):
     query = data.query(q)
     supports = torch.stack([data.support(s) for s in candidates])
     d = torchwarp.jeanie_1d_from_features(query.expand(len(candidates), -1, -1, -1), supports,
-                                          gamma, max_shift)
+                                          gamma=gamma, max_shift=max_shift)
     return candidates[int(d.argmin())]
 
 
@@ -88,12 +88,12 @@ def draw(data, q, s, path, gamma, shifts):
     plt.close(fig)
     row = dict(query=q, support=s, action=ACTIONS[data.seqs[q][0]],
                query_view=data.seqs[q][1], support_view=data.seqs[s][1])
-    per_view = paths.sdtw_per_view(query, support, gamma)
+    per_view = paths.soft_dtw_per_view(query, support, gamma=gamma)
     row["d_sdtw_min"] = min(float(a.distance[0]) for a in per_view)
-    row["d_fvm"] = float(paths.fvm(query, support, gamma).distance[0])
+    row["d_fvm"] = float(paths.fvm(query, support, gamma=gamma).distance[0])
     for m in shifts:
         row["d_jeanie_shift{}".format(m)] = float(
-            torchwarp.jeanie_1d_from_features(query, support, gamma, m))
+            torchwarp.jeanie_1d_from_features(query, support, gamma=gamma, max_shift=m))
     return row
 
 

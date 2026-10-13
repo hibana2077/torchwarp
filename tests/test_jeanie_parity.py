@@ -58,7 +58,7 @@ def _ref_feat_loss(q, s, metric, shift=1):
 
 
 def _fast_feat_loss(q, s, metric, backend, shift=1):
-    d, R = fast.jeanie_1d_from_features(q, s, 0.3, shift, metric=metric,
+    d, R = fast.jeanie_1d_from_features(q, s, gamma=0.3, max_shift=shift, metric=metric,
                                         return_accumulator=True, backend=backend)
     return d + 0.1 * (R ** 2).mean()
 
@@ -185,14 +185,14 @@ def test_vmap(backend, device):
     q = torch.randn(3, 2, 4, 5, 3, generator=_gen(10), **f64)
     s = torch.randn(3, 2, 6, 3, generator=_gen(11), **f64)
     got = torch.func.vmap(lambda a, b: fast.jeanie_1d_from_features(
-        a, b, 0.3, 1, backend=backend))(q.to(device), s.to(device))
+        a, b, gamma=0.3, max_shift=1, backend=backend))(q.to(device), s.to(device))
     for v in range(3):
         for b in range(2):
             want = ref.jeanie_1d_from_cost(ref.euclidean_cost(q[v, b], s[v, b]), 0.3, 1)
             _close(got[v, b].cpu(), want)
 
     # per-sample gradients: vmap(grad)
-    f = lambda a, b: fast.jeanie_1d_from_features(a, b, 0.3, 1, backend=backend)
+    f = lambda a, b: fast.jeanie_1d_from_features(a, b, gamma=0.3, max_shift=1, backend=backend)
     per = torch.func.vmap(torch.func.grad(f))(q[0].to(device), s[0].to(device))
     full = torch.func.grad(lambda a, b: f(a, b).sum())(q[0].to(device), s[0].to(device))
     _close(per, full)
@@ -213,7 +213,7 @@ def test_torch_compile_fullgraph(backend, device, path):
             return d.sum() + 0.1 * (R ** 2).mean()
     else:
         def f(q, s):
-            d, R = fast.jeanie_1d_from_features(q, s, 0.3, 1, return_accumulator=True,
+            d, R = fast.jeanie_1d_from_features(q, s, gamma=0.3, max_shift=1, return_accumulator=True,
                                                 backend=backend)
             return d.sum() + 0.1 * (R ** 2).mean()
     compiled = torch.compile(f, fullgraph=True)
@@ -229,7 +229,7 @@ def test_autocast_runs_in_float32():
     s = torch.randn(2, 6, 8, device="cuda")
     lin = torch.nn.Linear(8, 8).cuda()
     with torch.autocast("cuda", dtype=torch.float16):
-        a = fast.jeanie_1d_from_features(lin(q), lin(s), 0.3, 1)
+        a = fast.jeanie_1d_from_features(lin(q), lin(s), gamma=0.3, max_shift=1)
         b = fast.jeanie_1d_from_cost(fast.euclidean_cost(lin(q), lin(s)), 0.3, 1)
     assert a.dtype == torch.float32 and b.dtype == torch.float32
     (a.sum() + b.sum()).backward()

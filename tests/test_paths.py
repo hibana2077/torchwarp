@@ -111,7 +111,7 @@ def test_paths_match_enumeration(gamma, max_shift):
     for start in (None, 1):
         j = paths.jeanie(q, s, gamma=gamma, max_shift=max_shift, start_view=start)
         P = [p for p in all_paths(3, 4, 5, max_shift) if start is None or p[0][2] == start]
-        w = torch.stack([sum(j.D[0, k, t, u] for t, u, k in p) for p in P])
+        w = torch.stack([sum(j.cost[0, k, t, u] for t, u, k in p) for p in P])
         weights = torch.softmax(-w / gamma, 0)
         pm = torch.zeros(3, 4, 5, dtype=torch.float64)
         for a, p in zip(weights, P):
@@ -168,7 +168,7 @@ def test_alignment_plot():
     plt.close(fig)
 
     j = paths.jeanie(torch.randn(5, 7, 4), torch.randn(9, 4), max_shift=1)
-    ax = j.plot("path3d")
+    ax = j.plot("path_3d")
     assert ax.name == "3d"
     plt.close(ax.figure)
 

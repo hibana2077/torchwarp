@@ -269,21 +269,25 @@ print(torch.autograd.gradcheck(lambda x: f(x, s64), (q64,)))
 
 ## soft-DTW and soft-DTW divergence
 
-`soft_dtw` takes a base distance matrix `[T, U]` or `[B, T, U]`. The
-soft-DTW divergence is
-sDTW(x, y) - ½ [sDTW(x, x) + sDTW(y, y)]:
+`SoftDTW` takes two batches of sequences and has the arguments of
+`SoftDTW` in pytorch-softdtw-cuda, so code written for it runs after
+changing the import. `normalize=True` gives the soft-DTW divergence
+sDTW(x, y) - ½ [sDTW(x, x) + sDTW(y, y)].
 
 ```python
-def sdtw(a, b, gamma=0.1):
-    return torchwarp.soft_dtw(torchwarp.squared_euclidean_cost(a, b), gamma)
-
-
 # x, y: [batch, length, features]
 x = torch.randn(4, 30, 8, device="cuda")
 y = torch.randn(4, 40, 8, device="cuda")
 
-d_sdtw = sdtw(x, y)
-d_div = sdtw(x, y) - 0.5 * (sdtw(x, x) + sdtw(y, y))
+d_sdtw = torchwarp.SoftDTW(gamma=0.1)(x, y)                  # [batch]
+d_div = torchwarp.SoftDTW(gamma=0.1, normalize=True)(x, y)   # [batch]
+```
+
+`soft_dtw` takes a precomputed base distance matrix `[T, U]` or
+`[B, T, U]`:
+
+```python
+d_sdtw = torchwarp.soft_dtw(torchwarp.squared_euclidean_cost(x, y), gamma=0.1)
 ```
 
 ## Visualization
@@ -315,7 +319,7 @@ a.plot("twoway", x=x, y=y, ax=axes[2])     # the sequences joined along the opti
 ```
 
 For viewpoint alignments (`paths.jeanie`, `paths.fvm`,
-`paths.soft_dtw_per_view`), `a.plot("path3d")` draws the optimal path in
+`paths.soft_dtw_per_view`), `a.plot("path_3d")` draws the optimal path in
 3D (viewpoint, query time, support time).
 
 **2. Figure functions**: the full multi-panel figures of the papers.

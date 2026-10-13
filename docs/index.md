@@ -40,7 +40,7 @@ Viewpoint Matching (FVM), and plots of the alignment paths.
 
 | module | contents |
 | --- | --- |
-| `torchwarp` | `uDTW`, `JEANIE`, the functional APIs, soft-DTW, FVM and base distances |
+| `torchwarp` | `UDTW`, `JEANIE`, `SoftDTW`, the functional APIs, FVM and base distances |
 | `torchwarp.paths` | path matrices and optimal paths for visualization |
 | `torchwarp.plot` | matplotlib figures of the paths |
 
@@ -59,3 +59,5 @@ Viewpoint Matching (FVM), and plots of the alignment paths.
   dynamic programs run in float32.
 * **Batching**: most functions take one sequence pair or a batch with one
   extra leading dimension; the API reference lists the accepted shapes.
+* **Arguments**: names that exist in the official uDTW and JEANIE code keep
+  its positional arguments; options torchwarp adds are keyword-only.

@@ -8,7 +8,7 @@
   with optional skeletons (JEANIE, Fig. 7).
 * ``udtw_figure`` / ``viewpoint_figure``: the full multi-panel figures.
 
-``Alignment.plot(type)`` calls the first four. Needs matplotlib
+``Alignment.plot(type)`` calls the first four by name. Needs matplotlib
 (``pip install torchwarp[plot]``).
 """
 
@@ -47,7 +47,7 @@ def _image(path_matrix, power):
     return img ** power
 
 
-def alignment(a, index=0, ax=None, power=0.1, title=None):
+def alignment(a, *, index=0, ax=None, power=0.1, title=None):
     """Paths in white on black, pixels power-normalized (uDTW Fig. 2a-d).
 
     Plots ``a.path_matrix`` of batch item ``index``.
@@ -67,7 +67,7 @@ def alignment(a, index=0, ax=None, power=0.1, title=None):
     return ax
 
 
-def uncertainty(a, index=0, ax=None, power=0.1, threshold=0.6, hist=True, title=None):
+def uncertainty(a, *, index=0, ax=None, power=0.1, threshold=0.6, hist=True, title=None):
     """Uncertainty Sigma on the path, white pixels = high uncertainty (uDTW Fig. 2e).
 
     The plot of ``alignment`` is binarized at ``threshold`` and multiplied by
@@ -121,7 +121,7 @@ def _sequence(x, index):
     return x
 
 
-def twoway(a, x, y, index=0, ax=None, offset=None, step=1, title=None):
+def twoway(a, x, y, *, index=0, ax=None, offset=None, step=1, title=None):
     """Two 1-D sequences, y drawn below x, joined along the optimal path.
 
     x [N] (or [N, 1], [B, N, 1]) and y [M] are the sequences the alignment
@@ -169,7 +169,7 @@ def _glyph(ax, pose, origin, scale, color, bones, plane):
         ax.scatter(k0 + p[:, 0], np.full(len(p), t0), z0 + p[:, 1], color=color, s=1.5)
 
 
-def path_3d(alignments, labels=None, index=0, ax=None, angles=None, colors=None,
+def path_3d(alignments, *, labels=None, index=0, ax=None, angles=None, colors=None,
             query_poses=None, support_poses=None, bones=None, legend_loc="center left",
             title=None, elev=22, azim=-58, pose_step=1):
     """Optimal paths in 3D: viewpoint, query time, support time (JEANIE Fig. 7).
@@ -253,7 +253,7 @@ def path_3d(alignments, labels=None, index=0, ax=None, angles=None, colors=None,
     return ax
 
 
-def udtw_figure(X, Y, sigma_x, sigma_y, gammas=(0.01, 0.1), beta=1.0, index=0, power=0.1,
+def udtw_figure(X, Y, sigma_x, sigma_y, *, gammas=(0.01, 0.1), beta=1.0, index=0, power=0.1,
                 threshold=0.6):
     """uDTW Fig. 2: sDTW and uDTW paths for two gammas, and uDTW uncertainty.
 
@@ -267,21 +267,23 @@ def udtw_figure(X, Y, sigma_x, sigma_y, gammas=(0.01, 0.1), beta=1.0, index=0, p
     col = 0
     for g in gammas:
         a = _paths.udtw(X, Y, ones_x, ones_y, gamma=g, beta=0.0)
-        alignment(a, index, axes[col], power, title=r"sDTW$_{\gamma=%g}$" % g)
+        alignment(a, index=index, ax=axes[col], power=power, title=r"sDTW$_{\gamma=%g}$" % g)
         col += 1
     us = []
     for g in gammas:
         us.append(_paths.udtw(X, Y, sigma_x, sigma_y, gamma=g, beta=beta))
-        alignment(us[-1], index, axes[col], power, title=r"uDTW$_{\gamma=%g}$" % g)
+        alignment(us[-1], index=index, ax=axes[col], power=power,
+                  title=r"uDTW$_{\gamma=%g}$" % g)
         col += 1
-    uncertainty(us[0], index, axes[col], power, threshold, title="uDTW uncert.")
+    uncertainty(us[0], index=index, ax=axes[col], power=power, threshold=threshold,
+                title="uDTW uncert.")
     fig.subplots_adjust(wspace=0.08, left=0.01, right=0.99, top=0.98, bottom=0.14)
     return fig
 
 
-def viewpoint_figure(query, support, angles, gamma=0.1, max_shift=1, metric="euclidean",
+def viewpoint_figure(query, support, angles, *, gamma=0.1, max_shift=1, metric="euclidean",
                      query_poses=None, support_poses=None, bones=None, index=0,
-                     sdtw_gamma=None, fvm_gamma=None, jeanie_gamma=None, axes=None,
+                     soft_dtw_gamma=None, fvm_gamma=None, jeanie_gamma=None, axes=None,
                      titles=None, pose_step=1):
     """JEANIE Fig. 7: soft-DTW (view-wise), FVM and JEANIE (the optimal path for
     each possible starting position).
@@ -304,19 +306,20 @@ def viewpoint_figure(query, support, angles, gamma=0.1, max_shift=1, metric="euc
                          for i, m in enumerate(shifts)])
     kw = dict(angles=angles, query_poses=query_poses, support_poses=support_poses, bones=bones,
               index=index, pose_step=pose_step)
-    g_s, g_f, g_j = sdtw_gamma or gamma, fvm_gamma or gamma, jeanie_gamma or gamma
+    g_s, g_f, g_j = soft_dtw_gamma or gamma, fvm_gamma or gamma, jeanie_gamma or gamma
 
-    per_view = _paths.soft_dtw_per_view(query, support, g_s, metric, angles)
-    path_3d(per_view, ["{:.2f}".format(float(a.distance[index])) for a in per_view],
+    per_view = _paths.soft_dtw_per_view(query, support, gamma=g_s, metric=metric, angles=angles)
+    path_3d(per_view, labels=["{:.2f}".format(float(a.distance[index])) for a in per_view],
             ax=axes[0], title=titles[0], **kw)
 
-    f = _paths.fvm(query, support, g_f, metric, angles)
-    path_3d([f], [r"$d_{FVM} = %.2f$" % float(f.distance[index])], ax=axes[1],
+    f = _paths.fvm(query, support, gamma=g_f, metric=metric, angles=angles)
+    path_3d([f], labels=[r"$d_{FVM} = %.2f$" % float(f.distance[index])], ax=axes[1],
             colors=[PATH_COLORS[3]], title=titles[1], **kw)
 
     for i, m in enumerate(shifts):
-        starts = [_paths.jeanie(query, support, g_j, m, metric, angles, start_view=k)
+        starts = [_paths.jeanie(query, support, gamma=g_j, max_shift=m, metric=metric,
+                                angles=angles, start_view=k)
                   for k in range(len(angles))]
-        path_3d(starts, ["{:.2f}".format(float(a.distance[index])) for a in starts],
+        path_3d(starts, labels=["{:.2f}".format(float(a.distance[index])) for a in starts],
                 ax=axes[2 + i], title=titles[2 + i], **kw)
     return fig

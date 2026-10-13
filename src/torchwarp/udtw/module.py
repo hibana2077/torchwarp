@@ -4,6 +4,7 @@ import torch.nn as nn
 
 from .functional import (
     _BACKENDS,
+    UDTWOutput,
     _check_hyperparameters,
     _check_sequence_inputs,
     pairwise_matrices,
@@ -23,8 +24,11 @@ class UDTW(nn.Module):
             distance and the penalty.
         bandwidth: Optional Sakoe-Chiba bandwidth. None or 0 disables pruning.
         backend: "auto", "cuda" or "torch".
-        distance: "gemm" (default: cost built inside the fused op) or "diff"
+        method: "gemm" (default: cost built inside the fused op) or "diff"
             (materialised [B,N,M] matrices).
+
+    The first four arguments are those of the official uDTW code; the
+    others are keyword-only.
 
     Forward:
         X, Y: [B,N,D], [B,M,D]
@@ -32,11 +36,11 @@ class UDTW(nn.Module):
         beta: penalty coefficient from Eq. (15).
 
     Returns:
-        (distance [B], beta_weighted_penalty [B])
+        UDTWOutput(distance [B], penalty [B]); the penalty is beta-weighted.
     """
 
     def __init__(self, use_cuda=False, gamma=1.0, normalize=False,
-                 bandwidth=None, backend="auto", distance="gemm"):
+                 bandwidth=None, *, backend="auto", method="gemm"):
         super().__init__()
         self.use_cuda = bool(use_cuda)
         self.gamma = float(gamma)
@@ -44,18 +48,18 @@ class UDTW(nn.Module):
         self.bandwidth = None if bandwidth is None else float(bandwidth)
         if backend not in _BACKENDS:
             raise ValueError("backend must be one of {}".format(_BACKENDS))
-        if distance not in ("gemm", "diff"):
-            raise ValueError("distance must be 'gemm' or 'diff'")
+        if method not in ("gemm", "diff"):
+            raise ValueError("method must be 'gemm' or 'diff'")
         self.backend = backend
-        self.distance = distance
+        self.method = method
         _check_hyperparameters(self.gamma, 0.0, self.bandwidth)
 
     def _dp(self, A, B, SA, SB, beta):
-        if self.distance == "gemm":
-            return udtw_from_features(A, B, SA, SB, beta, self.gamma, self.bandwidth,
-                                      backend=self.backend)
-        cost, pen, _ = pairwise_matrices(A, B, SA, SB, beta, method=self.distance)
-        return udtw_from_cost(cost, pen, self.gamma, self.bandwidth, self.backend)
+        kw = dict(gamma=self.gamma, bandwidth=self.bandwidth, backend=self.backend)
+        if self.method == "gemm":
+            return udtw_from_features(A, B, SA, SB, beta=beta, **kw)
+        cost, pen, _ = pairwise_matrices(A, B, SA, SB, beta, method=self.method)
+        return udtw_from_cost(cost, pen, **kw)
 
     def forward(self, X, Y, Sigma_X, Sigma_Y, beta=1.0):
         _check_sequence_inputs(X, Y, Sigma_X, Sigma_Y)
@@ -63,11 +67,11 @@ class UDTW(nn.Module):
 
         out_xy, pen_xy = self._dp(X, Y, Sigma_X, Sigma_Y, beta)
         if not self.normalize:
-            return out_xy, pen_xy
+            return UDTWOutput(out_xy, pen_xy)
 
         out_xx, pen_xx = self._dp(X, X, Sigma_X, Sigma_X, beta)
         out_yy, pen_yy = self._dp(Y, Y, Sigma_Y, Sigma_Y, beta)
-        return out_xy - 0.5 * (out_xx + out_yy), pen_xy - 0.5 * (pen_xx + pen_yy)
+        return UDTWOutput(out_xy - 0.5 * (out_xx + out_yy), pen_xy - 0.5 * (pen_xx + pen_yy))
 
 
 # Name used by the official uDTW code and earlier torchwarp versions.

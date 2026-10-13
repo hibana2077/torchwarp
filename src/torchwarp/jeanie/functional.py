@@ -107,7 +107,7 @@ def _jeanie_dp_features(query, support, gamma=0.1, max_shift_1=1, max_shift_2=1,
     return out, (R if return_accumulator else None)
 
 
-def jeanie_1d_from_features(query, support, gamma=0.1, max_shift=1,
+def jeanie_1d_from_features(query, support, *, gamma=0.1, max_shift=1,
                             metric="euclidean", return_accumulator=False, backend="auto"):
     """JEANIE (one viewpoint axis) from features.
 
@@ -131,7 +131,7 @@ def jeanie_1d_from_features(query, support, gamma=0.1, max_shift=1,
     return (out, R) if return_accumulator else out
 
 
-def jeanie_2d_from_features(query, support, gamma=0.1, max_shift_az=1, max_shift_alt=1,
+def jeanie_2d_from_features(query, support, *, gamma=0.1, max_shift_az=1, max_shift_alt=1,
                             metric="euclidean", return_accumulator=False, backend="auto"):
     """JEANIE on a two-axis viewpoint grid from features.
 
@@ -170,6 +170,7 @@ def jeanie_1d_from_cost(
     gamma: float = 0.1,
     max_shift: int = 1,
     return_accumulator: bool = False,
+    *,
     backend: str = "auto",
 ):
     """JEANIE for one viewpoint axis (Algorithm 1).
@@ -204,6 +205,7 @@ def jeanie_2d_from_cost(
     max_shift_az: int = 1,
     max_shift_alt: int = 1,
     return_accumulator: bool = False,
+    *,
     backend: str = "auto",
 ):
     """JEANIE on a two-axis viewpoint grid.

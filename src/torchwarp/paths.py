@@ -39,7 +39,7 @@ class Alignment:
             SoftMinSel_gamma(w, [Pi_i]).
         optimal_path: per batch item, the cells (t, u) (or (t, u, k)) of the
             path with the smallest distance, from (0, 0) to (T-1, U-1).
-        D: the distance matrix (tensor) the paths are evaluated on; for uDTW
+        cost: the cost matrix (tensor) the paths are evaluated on; for uDTW
             it is D * Sigma^dagger (uDTW Eq. 2).
         Sigma: [B, T, U] pair-wise variances (uDTW only).
         Omega: [B] penalty Omega(Sigma), times beta (uDTW only).
@@ -49,7 +49,7 @@ class Alignment:
     distance: torch.Tensor
     path_matrix: torch.Tensor
     optimal_path: List[List[Tuple[int, ...]]]
-    D: torch.Tensor
+    cost: torch.Tensor
     Sigma: Optional[torch.Tensor] = None
     Omega: Optional[torch.Tensor] = None
     angles: Optional[list] = field(default=None)
@@ -59,14 +59,15 @@ class Alignment:
 
         type: "alignment" (path matrix), "uncertainty" (Sigma on the path,
         uDTW only), "twoway" (two 1-D sequences joined along the optimal
-        path; pass ``x`` and ``y``) or "path3d" (optimal path in 3D, for
-        viewpoint alignments). Keyword arguments go to that function, e.g.
+        path; pass ``x`` and ``y``) or "path_3d" (optimal path in 3D, for
+        viewpoint alignments): the name of the ``torchwarp.plot`` function.
+        Keyword arguments go to that function, e.g.
         ``index`` (batch item) and ``ax``. Returns the matplotlib axis.
         """
         from . import plot
 
         fns = {"alignment": plot.alignment, "uncertainty": plot.uncertainty,
-               "twoway": plot.twoway, "path3d": plot.path_3d}
+               "twoway": plot.twoway, "path_3d": plot.path_3d}
         if type not in fns:
             raise ValueError("type must be one of {}".format(sorted(fns)))
         return fns[type](self, **kwargs)
@@ -116,14 +117,14 @@ def _optimal_3d(D, max_shift, start_view=None):
     return path[::-1]
 
 
-def optimal_path(D, max_shift=0, start_view=None):
-    """Paths with the smallest distance for a batch of distance matrices.
+def optimal_path(cost, *, max_shift=0, start_view=None):
+    """Paths with the smallest distance for a batch of cost matrices.
 
-    D: [B, T, U] (cells (t, u)) or [B, K, T, U] (cells (t, u, k)).
+    cost: [B, T, U] (cells (t, u)) or [B, K, T, U] (cells (t, u, k)).
     """
-    if D.ndim == 3:
-        return [[(t, u) for t, u, _ in _optimal_3d(d.unsqueeze(0), 0)] for d in D]
-    return [_optimal_3d(d, max_shift, start_view) for d in D]
+    if cost.ndim == 3:
+        return [[(t, u) for t, u, _ in _optimal_3d(c.unsqueeze(0), 0)] for c in cost]
+    return [_optimal_3d(c, max_shift, start_view) for c in cost]
 
 
 def _batched(x, ndim):
@@ -138,14 +139,14 @@ def _base_distance(query, support, metric):
     raise ValueError("metric must be 'euclidean' or 'sqeuclidean'")
 
 
-def soft_dtw(D, gamma=0.1):
-    """soft-DTW paths for a distance matrix D [B, T, U] (or [T, U])."""
-    D = _batched(D, 2)
-    d, pm = _value_and_grad(lambda x: _sdtw.soft_dtw(x, gamma), D)
-    return Alignment(d, pm, optimal_path(D), D)
+def soft_dtw(cost, *, gamma=0.1):
+    """soft-DTW paths for a cost matrix [B, T, U] (or [T, U])."""
+    cost = _batched(cost, 2)
+    d, pm = _value_and_grad(lambda x: _sdtw.soft_dtw(x, gamma), cost)
+    return Alignment(d, pm, optimal_path(cost), cost)
 
 
-def soft_dtw_per_view(query, support, gamma=0.1, metric="euclidean", angles=None):
+def soft_dtw_per_view(query, support, *, gamma=0.1, metric="euclidean", angles=None):
     """soft-DTW (view-wise): each viewpoint of the query aligned separately.
 
     query [B, K, T, d] (or [K, T, d]), support [B, U, d] (or [U, d]).
@@ -154,14 +155,14 @@ def soft_dtw_per_view(query, support, gamma=0.1, metric="euclidean", angles=None
     D = _base_distance(_batched(query, 3), _batched(support, 2), metric)
     out = []
     for k in range(D.shape[1]):
-        a = soft_dtw(D[:, k], gamma)
+        a = soft_dtw(D[:, k], gamma=gamma)
         a.optimal_path = [[(t, u, k) for t, u in p] for p in a.optimal_path]
         a.angles = angles
         out.append(a)
     return out
 
 
-def udtw(X, Y, sigma_x, sigma_y, gamma=0.1, beta=1.0):
+def udtw(X, Y, sigma_x, sigma_y, *, gamma=1.0, beta=1.0):
     """uDTW paths. X [B, N, d], Y [B, M, d], sigma_x [B, N, 1], sigma_y [B, M, 1].
 
     The paths are evaluated on D * Sigma^dagger (uDTW Eq. 2); ``Sigma`` holds
@@ -169,13 +170,13 @@ def udtw(X, Y, sigma_x, sigma_y, gamma=0.1, beta=1.0):
     """
     with torch.no_grad():
         DS, pen, Sigma = pairwise_matrices(X, Y, sigma_x, sigma_y, beta)
-    d, pm = _value_and_grad(lambda x: udtw_from_cost(x, pen, gamma)[0], DS)
+    d, pm = _value_and_grad(lambda x: udtw_from_cost(x, pen, gamma=gamma).distance, DS)
     with torch.no_grad():
-        Omega = udtw_from_cost(DS, pen, gamma)[1]
+        Omega = udtw_from_cost(DS, pen, gamma=gamma).penalty
     return Alignment(d, pm, optimal_path(DS), DS, Sigma=Sigma, Omega=Omega)
 
 
-def fvm(query, support, gamma=0.1, metric="euclidean", angles=None):
+def fvm(query, support, *, gamma=0.1, metric="euclidean", angles=None):
     """FVM paths (query viewpoints only); query [B, K, T, d], support [B, U, d].
 
     At each step the viewpoint is free (JEANIE Eq. 13).
@@ -185,7 +186,7 @@ def fvm(query, support, gamma=0.1, metric="euclidean", angles=None):
     return Alignment(d, pm, optimal_path(D, max_shift=D.shape[1]), D, angles=angles)
 
 
-def jeanie(query, support, gamma=0.1, max_shift=1, metric="euclidean", angles=None,
+def jeanie(query, support, *, gamma=0.1, max_shift=1, metric="euclidean", angles=None,
            start_view=None):
     """JEANIE paths (one viewpoint axis); query [B, K, T, d], support [B, U, d].
 
@@ -201,4 +202,5 @@ def jeanie(query, support, gamma=0.1, max_shift=1, metric="euclidean", angles=No
         block[:, start_view, 0, 0] = 0
         Ds = D + block
     d, pm = _value_and_grad(lambda x: jeanie_1d_from_cost(x, gamma, max_shift), Ds)
-    return Alignment(d, pm, optimal_path(D, max_shift, start_view), D, angles=angles)
+    return Alignment(d, pm, optimal_path(D, max_shift=max_shift, start_view=start_view), D,
+                     angles=angles)

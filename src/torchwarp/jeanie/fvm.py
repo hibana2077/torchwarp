@@ -12,6 +12,7 @@ from .. import sdtw  # module, not the function: sdtw imports this package
 def fvm_from_cost(
     cost: torch.Tensor,
     gamma: float = 0.1,
+    *,
     batched: bool = False,
     backend: str = "auto",
 ) -> torch.Tensor:
@@ -30,7 +31,7 @@ def fvm_from_cost(
     T, U = cost.shape[-2:]
     flat = cost.reshape(*cost.shape[:lead], -1, T, U)
     temporal = -gamma * torch.logsumexp(-flat / gamma, dim=lead)
-    return sdtw.soft_dtw(temporal, gamma, backend)
+    return sdtw.soft_dtw(temporal, gamma, backend=backend)
 
 
 def _fvm_fixed(cost, ndim, layout, gamma, backend):
@@ -39,21 +40,21 @@ def _fvm_fixed(cost, ndim, layout, gamma, backend):
     return fvm_from_cost(cost, gamma, batched=cost.ndim == ndim + 1, backend=backend)
 
 
-def fvm_query_only_1d(cost, gamma=0.1, backend="auto"):
+def fvm_query_only_1d(cost, gamma=0.1, *, backend="auto"):
     """Query-only 1-D FVM for cost [K, T, U] or [B, K, T, U]."""
     return _fvm_fixed(cost, 3, "[K, T, U]", gamma, backend)
 
 
-def fvm_query_only_2d(cost, gamma=0.1, backend="auto"):
+def fvm_query_only_2d(cost, gamma=0.1, *, backend="auto"):
     """Query-only 2-D FVM for cost [K1, K2, T, U] or [B, K1, K2, T, U]."""
     return _fvm_fixed(cost, 4, "[K1, K2, T, U]", gamma, backend)
 
 
-def fvm_1d_from_cost(cost, gamma=0.1, backend="auto"):
+def fvm_1d_from_cost(cost, gamma=0.1, *, backend="auto"):
     """Full 1-D FVM for cost [Kq, Ks, T, U] or [B, Kq, Ks, T, U]."""
     return _fvm_fixed(cost, 4, "[K_query, K_support, T, U]", gamma, backend)
 
 
-def fvm_2d_from_cost(cost, gamma=0.1, backend="auto"):
+def fvm_2d_from_cost(cost, gamma=0.1, *, backend="auto"):
     """Full 2-D FVM for cost [Kq1,Kq2,Ks1,Ks2,T,U] or with a batch dim."""
     return _fvm_fixed(cost, 6, "[Kq1,Kq2,Ks1,Ks2,T,U]", gamma, backend)

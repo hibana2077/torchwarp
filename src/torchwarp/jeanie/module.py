@@ -26,7 +26,7 @@ class JEANIE(nn.Module):
         distance [B] (and the accumulator if requested).
     """
 
-    def __init__(self, gamma=0.1, max_shift=1, metric="euclidean", backend="auto"):
+    def __init__(self, *, gamma=0.1, max_shift=1, metric="euclidean", backend="auto"):
         super().__init__()
         if isinstance(max_shift, int):
             max_shift = (max_shift, 0)
@@ -35,7 +35,7 @@ class JEANIE(nn.Module):
         self.metric = metric
         self.backend = backend
 
-    def forward(self, query, support, return_accumulator=False):
+    def forward(self, query, support, *, return_accumulator=False):
         one_axis = query.ndim == 4
         if one_axis:
             query = query.unsqueeze(2)
