@@ -1,9 +1,6 @@
 # torchwarp documentation
 
-torchwarp is an accelerated PyTorch implementation of uncertainty-DTW
-(uDTW, ECCV 2022) and JEANIE (IJCV 2024) with optimized CUDA kernels;
-both methods were proposed by Lei Wang, Piotr Koniusz et al. It also provides soft-DTW and Free
-Viewpoint Matching (FVM), and plots of the alignment paths.
+torchwarp is an accelerated PyTorch implementation of uncertainty-DTW and JEANIE with optimized CUDA kernels.
 
 | page | contents |
 | --- | --- |
