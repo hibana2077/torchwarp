@@ -10,7 +10,7 @@
 
 **torchwarp** is an accelerated PyTorch implementation of [uDTW](https://github.com/LeiWangR/uDTW) and [JEANIE](https://github.com/LeiWangR/JEANIE), providing differentiable sequence alignment with optimized CUDA kernels.
 
-This repository includes uDTW, JEANIE and FVM, together with examples and the experiments behind the results below.
+This repository provides implementations of uDTW, JEANIE, and FVM, along with usage examples and experiments demonstrating their performance.
 
 ## Features
 
