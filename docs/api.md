@@ -1,5 +1,8 @@
 # API reference
 
+This document lists every public function and class in `torchwarp`,
+with its signature, arguments, input and output shapes, and errors.
+
 Shapes use these letters:
 
 | letter | meaning |

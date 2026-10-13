@@ -15,9 +15,7 @@ This repository provides implementations of uDTW, JEANIE, and FVM, along with us
 ## Features
 
 - **uDTW, JEANIE and FVM:** differentiable alignment, with forward values and gradients validated against the original implementations (see `tests/`).
-- **Same API as the official code:** every name in the official `udtw` and `jeanie` packages exists in `torchwarp` with the same arguments, so changing the import is enough. `SoftDTW` takes the arguments of pytorch-softdtw-cuda's `SoftDTW`.
 - **CUDA acceleration:** up to 963× faster training steps in the NW-UCLA benchmark (see [Results](#results)).
-- **Examples and experiments:** short usage examples in `examples/`; ECG5000 forecasting and NW-UCLA few-shot action recognition in `experiments/`, with alignment visualizations.
 
 ## Installation
 
@@ -29,7 +27,7 @@ pip install -e .            # or -e ".[plot]" to also install matplotlib for tor
 
 CUDA acceleration needs a CUDA-enabled PyTorch build and a CUDA toolkit (`nvcc`) of the same major version; without them torchwarp runs on its PyTorch backend. For CUDA-specific PyTorch builds, uv installation, and optional dependencies, see the [installation guide](docs/installation.md).
 
-## Minimal Example
+## Example
 
 ### uDTW
 
@@ -45,6 +43,7 @@ X = torch.randn(4, 30, 8, device=device, requires_grad=True)
 Y = torch.randn(4, 40, 8, device=device)
 sigma_x = torch.rand(4, 30, 1, device=device) + 0.5
 sigma_y = torch.rand(4, 40, 1, device=device) + 0.5
+# sigma must be positive, so add 0.5
 
 udtw = UDTW(gamma=1.0)
 d, omega = udtw(X, Y, sigma_x, sigma_y, beta=1.0)
@@ -65,11 +64,11 @@ uncertainty penalty β Ω, one value per pair (shape `[B]`); the training
 loss adds the two. For `normalize=True`, custom base distances and
 `torchwarp.udtw_from_cost`, see the [usage guide](docs/usage.md).
 
-### JEANIE and FVM
+### JEANIE
 
 ```python
 import torch
-from torchwarp import euclidean_cost, jeanie_1d_from_cost, fvm_query_only_1d
+from torchwarp import euclidean_cost, jeanie_1d_from_cost
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -78,18 +77,30 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 query_features = torch.randn(5, 7, 64, device=device, requires_grad=True)
 support_features = torch.randn(7, 64, device=device)
 
-cost = euclidean_cost(query_features, support_features)
-
-# JEANIE
+cost = euclidean_cost(query_features, support_features)   # [K, T, U]
 d_jeanie = jeanie_1d_from_cost(cost, gamma=0.1, max_shift=1)
-
-# FVM
-d_fvm = fvm_query_only_1d(cost, gamma=0.1)
-
 d_jeanie.backward()
 ```
 
-where:
+### FVM
+
+```python
+import torch
+from torchwarp import euclidean_cost, fvm_query_only_1d
+
+device = "cuda" if torch.cuda.is_available() else "cpu"
+
+# query_features:   [K, T, D]
+# support_features: [U, D]
+query_features = torch.randn(5, 7, 64, device=device, requires_grad=True)
+support_features = torch.randn(7, 64, device=device)
+
+cost = euclidean_cost(query_features, support_features)   # [K, T, U]
+d_fvm = fvm_query_only_1d(cost, gamma=0.1)
+d_fvm.backward()
+```
+
+In both examples:
 
 - `K` = number of query viewpoints
 - `T` = number of query temporal blocks
