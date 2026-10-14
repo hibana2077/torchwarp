@@ -6,20 +6,19 @@ Step-by-step usage of torchwarp. For the exact arguments and shapes of every fun
 
 uDTW compares two sequences, for example two time series, or two
 skeleton sequences encoded as one feature vector per temporal block.
-Each time step i of a sequence has an uncertainty σ<sub>i</sub> > 0,
+Each time step i of a sequence has an uncertainty `sigma_i > 0`,
 predicted from the features by a small network (SigmaNet in the
 paper). For time steps i of X and j of Y, uDTW uses the variance
-Σ<sub>ij</sub> = ½ (σ<sub>i</sub>² + σ'<sub>j</sub>²) and returns two
+`Sigma_ij = 0.5 * (sigma_i^2 + sigma'_j^2)` and returns two
 tensors of shape `[batch]`, one entry per pair (X[b], Y[b]):
 
 * `d`: the uDTW distance (Eq. 2), the soft minimum over all warping
-  paths of the sum of ‖x<sub>i</sub> - y<sub>j</sub>‖² / Σ<sub>ij</sub>
-  along the path;
-* `omega`: the penalty Ω (Eq. 3), β times the sum of log Σ<sub>ij</sub>
-  along the same soft-selected path.
+  paths of the sum of `||x_i - y_j||^2 / Sigma_ij` along the path;
+* `omega`: the penalty `Omega` (Eq. 3), `beta` times the sum of
+  `log(Sigma_ij)` along the same soft-selected path.
 
 With `normalize=True` both are returned as
-d(X, Y) - ½ [d(X, X) + d(Y, Y)].
+`d(X, Y) - 0.5 * (d(X, X) + d(Y, Y))`.
 
 ```python
 import torch
@@ -50,12 +49,11 @@ loss.backward()
 
 `uDTW` uses the squared Euclidean distance between time steps. To use
 another distance between time steps, build the two `[batch, len_x, len_y]`
-matrices of Eq. 2 and Eq. 3 yourself, cost<sub>ij</sub> =
-d(x<sub>i</sub>, y<sub>j</sub>) / Σ<sub>ij</sub> and penalty<sub>ij</sub>
-= β log Σ<sub>ij</sub>, and pass them to `udtw_from_cost`. Here
-`pairwise_matrices` returns the default cost, the penalty and Σ, and the
-cost is replaced by the cosine distance
-d(x<sub>i</sub>, y<sub>j</sub>) = 1 - cos(x<sub>i</sub>, y<sub>j</sub>):
+matrices of Eq. 2 and Eq. 3 yourself, `cost_ij = d(x_i, y_j) / Sigma_ij`
+and `penalty_ij = beta * log(Sigma_ij)`, and pass them to
+`udtw_from_cost`. Here `pairwise_matrices` returns the default cost, the
+penalty and `Sigma`, and the cost is replaced by the cosine distance
+`d(x_i, y_j) = 1 - cos(x_i, y_j)`:
 
 ```python
 # default matrices, each [batch, len_x, len_y]
@@ -117,8 +115,8 @@ Here a skeleton sequence is `[frames, joints, 3]`, `query` is
 `JEANIE` takes a batch, `[batch, views, blocks, features]` and
 `[batch, blocks, features]`, and returns `dist` of shape `[batch]`, the
 JEANIE distance of each query and support pair. `max_shift` is the
-ι-max shift: along the path, the viewpoint index changes by at most ι
-from one step to the next.
+`iota`-max shift: along the path, the viewpoint index changes by at most
+`iota` from one step to the next.
 
 The accumulator tensor R of Algorithm 1, `[batch, views, blocks_q,
 blocks_s]`, is returned with:
@@ -273,7 +271,7 @@ print(torch.autograd.gradcheck(lambda x: f(x, s64), (q64,)))
 `SoftDTW` takes two batches of sequences and has the arguments of
 `SoftDTW` in pytorch-softdtw-cuda, so code written for it runs after
 changing the import. `normalize=True` gives the soft-DTW divergence
-sDTW(x, y) - ½ [sDTW(x, x) + sDTW(y, y)].
+`sDTW(x, y) - 0.5 * (sDTW(x, x) + sDTW(y, y))`.
 
 ```python
 # x, y: [batch, length, features]
@@ -352,9 +350,9 @@ plt.plot(j, i, "w-")
 | `Sigma` | `[B, T, U]` | heatmap of the uncertainty | uDTW |
 | `distance`, `Omega` | `[B]` | values, e.g. in titles or legends | all (`Omega`: uDTW) |
 
-`a.path_matrix` is SoftMinSel<sub>γ</sub>(w, [Π<sub>i</sub>]): the path
-matrices Π<sub>i</sub> of all paths, weighted by the soft-selector of
-Eq. 3 over their path distances w<sub>i</sub>. It is also the gradient
+`a.path_matrix` is `SoftMinSel_gamma(w, [Pi_i])`: the path matrices
+`Pi_i` of all paths, weighted by the soft-selector of Eq. 3 over their
+path distances `w_i`. It is also the gradient
 of the distance with respect to the cost matrix:
 
 ```python

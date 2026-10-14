@@ -57,10 +57,10 @@ where:
 - `N`, `M` = lengths of the two sequences
 - `D` = feature dimension
 
-`sigma_x` and `sigma_y` are the uncertainties σ > 0 of each time step; in
+`sigma_x` and `sigma_y` are the uncertainties `sigma > 0` of each time step; in
 practice they are predicted from the features by a small network
 (SigmaNet in the paper). `d` is the uDTW distance and `omega` the
-uncertainty penalty β Ω, one value per pair (shape `[B]`); the training
+uncertainty penalty `beta * Omega`, one value per pair (shape `[B]`); the training
 loss adds the two. For `normalize=True`, custom base distances and
 `torchwarp.udtw_from_cost`, see the [usage guide](docs/usage.md).
 
@@ -122,7 +122,7 @@ viewpoint axes, see the [usage guide](docs/usage.md).
 
 Predict the last 40% of each series from the first 60%; test metrics of
 the MLP trained with each loss (mean ± std over seeds 42, 43, 44; lower is
-better). soft-DTW and soft-DTW divergence use γ = 0.001; the uDTW
+better). soft-DTW and soft-DTW divergence use `gamma = 0.001`; the uDTW
 hyperparameters were selected on a validation split of the training set
 ([`ecg5000_tune.py`](experiments/ecg5000_tune.py)).
 

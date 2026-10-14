@@ -67,30 +67,32 @@ The training settings stated in the uDTW paper
 ([arXiv 2211.00005](https://arxiv.org/abs/2211.00005), App. H.2, H.5
 and I.2) are available as `--setup paper`:
 
-* MLP 84 → t′ → 56 with a tanh in between; every weight, bias included,
+* MLP 84 → `t'` → 56 with a tanh in between; every weight, bias included,
   drawn from N(0, 1).
 * SGD, learning rate 1e-3, weight decay 1e-6.
-* Per-frame SigmaNet σ_t = κ · sigmoid(FC(ψ_t)) + η with κ = 1.5 and
-  η = 0.01 (one value per frame, as in App. H.2 and the official
-  `SimpleSigmaNet`), and Σ = 0.5 (σ² + σ′²) (Eq. 8).
+* Per-frame SigmaNet `sigma_t = kappa * sigmoid(FC(psi_t)) + eta` with
+  `kappa = 1.5` and `eta = 0.01` (one value per frame, as in App. H.2
+  and the official `SimpleSigmaNet`), and
+  `Sigma = 0.5 * (sigma^2 + sigma'^2)` (Eq. 8).
 * Training losses (squared Euclidean base distance): Euclidean, DTW,
-  soft-DTW, soft-DTW divergence and uDTW (d_uDTW + β Ω, without
+  soft-DTW, soft-DTW divergence and uDTW (`d_uDTW + beta * Omega`, without
   normalisation).
 
-The paper does not give t′, the number of epochs, the batch size, γ or
-β for this task, and tunes the remaining hyperparameters on a validation
+The paper does not give `t'`, the number of epochs, the batch size, `gamma`
+or `beta` for this task, and tunes the remaining hyperparameters on a validation
 set. [`experiments/ecg5000_tune.py --setup paper`](../experiments/ecg5000_tune.py)
 does the same on a fixed 400/100 split of the training set (the test set
-is not used): t′ ∈ {30, 50}, batch size ∈ {1, 10, 50}, epochs ∈ {30, 50,
-100}, γ ∈ {0.01, 0.1, 1}, β ∈ {0.01, 0.1, 1}, two seeds per point.
+is not used): `t' in {30, 50}`, `batch_size in {1, 10, 50}`,
+`epochs in {30, 50, 100}`, `gamma in {0.01, 0.1, 1}`,
+`beta in {0.01, 0.1, 1}`, two seeds per point.
 Euclidean is selected by validation MSE and the alignment losses by
 validation DTW; grid points where a seed diverged are skipped. The
 selected values go into `PAPER_LOSSES` in
 [`experiments/ecg5000_forecast.py`](../experiments/ecg5000_forecast.py).
 
 Test metrics (float64, lower is better): MSE (per time step), SSE
-(summed over the 56 predicted steps), DTW, soft-DTW divergence (γ = 1)
-and uDTW (γ = 1, β = 1, `normalize=True`). The uDTW metric takes σ from
+(summed over the 56 predicted steps), DTW, soft-DTW divergence (`gamma = 1`)
+and uDTW (`gamma = 1`, `beta = 1`, `normalize=True`). The uDTW metric takes `sigma` from
 one fixed SigmaNet trained with the uDTW setting (seed 100), shared by
 all models.
 

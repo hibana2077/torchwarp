@@ -39,12 +39,12 @@ Contents:
 
 ## uDTW
 
-For time step i of X and j of Y, with uncertainties σ<sub>i</sub> and
-σ'<sub>j</sub>, uDTW uses the variance
-Σ<sub>ij</sub> = ½ (σ<sub>i</sub>² + σ'<sub>j</sub>²) (Eq. 8), the cost
-‖x<sub>i</sub> - y<sub>j</sub>‖² / Σ<sub>ij</sub> and the penalty
-β log Σ<sub>ij</sub> (Eq. 16). The distance is the soft minimum of the
-path costs (Eq. 2); the penalty Ω is the sum of the penalty along the
+For time step i of X and j of Y, with uncertainties `sigma_i` and
+`sigma'_j`, uDTW uses the variance
+`Sigma_ij = 0.5 * (sigma_i^2 + sigma'_j^2)` (Eq. 8), the cost
+`||x_i - y_j||^2 / Sigma_ij` and the penalty `beta * log(Sigma_ij)`
+(Eq. 16). The distance is the soft minimum of the path costs (Eq. 2);
+the penalty `Omega` is the sum of the penalty along the
 paths, weighted by the same soft selection (Eq. 3).
 
 ### `UDTW`
@@ -61,9 +61,9 @@ the official code.
 | argument | type | default | description |
 | --- | --- | --- | --- |
 | `use_cuda` | bool | `False` | Ignored; kept for compatibility with the official API. The device of the inputs decides where the computation runs. |
-| `gamma` | float | `1.0` | Soft minimum temperature γ, > 0. |
-| `normalize` | bool | `False` | If `True`, return d(X, Y) - ½ [d(X, X) + d(Y, Y)] for both the distance and the penalty. |
-| `bandwidth` | float or None | `None` | Sakoe-Chiba band: only cells with \|i - j\| ≤ `bandwidth` are used. `None` or `0` uses all cells. |
+| `gamma` | float | `1.0` | Soft minimum temperature `gamma > 0`. |
+| `normalize` | bool | `False` | If `True`, return `d(X, Y) - 0.5 * (d(X, X) + d(Y, Y))` for both the distance and the penalty. |
+| `bandwidth` | float or None | `None` | Sakoe-Chiba band: only cells with `abs(i - j) <= bandwidth` are used. `None` or `0` uses all cells. |
 | `backend` | str | `"auto"` | `"auto"`, `"cuda"` or `"torch"`. |
 | `method` | str | `"gemm"` | `"gemm"` builds the cost inside the fused kernel without storing `[B, N, M]` matrices; `"diff"` builds the matrices with `pairwise_matrices` first. Same result. |
 
@@ -73,12 +73,12 @@ the official code.
 | --- | --- | --- |
 | `X` | `[B, N, D]` | First batch of sequences. |
 | `Y` | `[B, M, D]` | Second batch of sequences. |
-| `Sigma_X` | `[B, N, 1]` | Uncertainty σ (a standard deviation, > 0) of each time step of `X`. |
-| `Sigma_Y` | `[B, M, 1]` | Uncertainty σ' of each time step of `Y`. |
-| `beta` | float | Penalty weight β ≥ 0. |
+| `Sigma_X` | `[B, N, 1]` | Uncertainty `sigma` (a standard deviation, `> 0`) of each time step of `X`. |
+| `Sigma_Y` | `[B, M, 1]` | Uncertainty `sigma'` of each time step of `Y`. |
+| `beta` | float | Penalty weight `beta >= 0`. |
 
 **Returns** `UDTWOutput(distance, penalty)`, a named tuple of two `[B]`
-tensors: the uDTW distance and the penalty β Ω of each pair
+tensors: the uDTW distance and the penalty `beta * Omega` of each pair
 (X[b], Y[b]). `d, omega = udtw(...)` and `out.distance` both work.
 
 **Raises** `ValueError` for wrong shapes, `gamma <= 0`, `beta < 0`,
@@ -100,7 +100,7 @@ torchwarp.udtw_from_features(X, Y, sigma_x, sigma_y, *, beta=1.0, gamma=1.0,
 
 Functional form of `UDTW` (without `normalize`). Arguments as in
 `UDTW.forward` (`sigma_x`, `sigma_y` are `Sigma_X`, `Sigma_Y` there);
-`eps` is the lower bound applied to Σ.
+`eps` is the lower bound applied to `Sigma`.
 
 **Returns** `UDTWOutput(distance [B], penalty [B])`.
 
@@ -116,8 +116,8 @@ the jointly generated variance of Eq. 9).
 
 | argument | shape | description |
 | --- | --- | --- |
-| `cost` | `[B, N, M]` | Uncertainty-weighted cost of each cell, for example d(x<sub>i</sub>, y<sub>j</sub>) / Σ<sub>ij</sub>. |
-| `penalty` | `[B, N, M]` | Penalty of each cell, for example β log Σ<sub>ij</sub>. |
+| `cost` | `[B, N, M]` | Uncertainty-weighted cost of each cell, for example `d(x_i, y_j) / Sigma_ij`. |
+| `penalty` | `[B, N, M]` | Penalty of each cell, for example `beta * log(Sigma_ij)`. |
 | `gamma` | float | Soft minimum temperature, > 0. |
 | `bandwidth` | float or None | Sakoe-Chiba band, as in `UDTW`. |
 
@@ -141,11 +141,11 @@ torchwarp.pairwise_matrices(X, Y, Sigma_X, Sigma_Y, beta=1.0, eps=1e-8, *,
 Builds the default uDTW matrices.
 
 **Returns** `(cost, penalty, Sigma)`, each `[B, N, M]`:
-cost<sub>ij</sub> = ‖x<sub>i</sub> - y<sub>j</sub>‖² / Σ<sub>ij</sub>,
-penalty<sub>ij</sub> = β log Σ<sub>ij</sub>,
-Σ<sub>ij</sub> = max(½ (σ<sub>i</sub>² + σ'<sub>j</sub>²), `eps`).
-`method` is `"gemm"` (‖x‖² + ‖y‖² - 2 x·y with one batched matrix
-product, low memory) or `"diff"` (forms x - y explicitly).
+`cost_ij = ||x_i - y_j||^2 / Sigma_ij`,
+`penalty_ij = beta * log(Sigma_ij)`,
+`Sigma_ij = max(0.5 * (sigma_i^2 + sigma'_j^2), eps)`.
+`method` is `"gemm"` (`||x||^2 + ||y||^2 - 2 * x.y` with one batched
+matrix product, low memory) or `"diff"` (forms `x - y` explicitly).
 
 ---
 
@@ -153,7 +153,7 @@ product, low memory) or `"diff"` (forms x - y explicitly).
 
 JEANIE aligns a query seen from K simulated viewpoints with a support
 sequence. A path moves through cells (t, u, k): t and u move as in DTW
-and the viewpoint k may change by at most ι (`max_shift`) per step. The
+and the viewpoint k may change by at most `iota` (`max_shift`) per step. The
 path may start and end at any viewpoint. The distance is the soft
 minimum of the path distances (Algorithm 1).
 
@@ -168,9 +168,9 @@ pair from their features.
 
 | argument | type | default | description |
 | --- | --- | --- | --- |
-| `gamma` | float | `0.1` | Soft minimum temperature γ, > 0. |
-| `max_shift` | int or (int, int) | `1` | ι-max shift. An int for one viewpoint axis; a pair `(azimuth, altitude)` for two axes. Values above K - 1 behave like K - 1. |
-| `metric` | str | `"euclidean"` | Base distance between blocks: `"euclidean"`, `"sqeuclidean"` or `"rbf"` (see `rbf_cost`, σ = 0.5). |
+| `gamma` | float | `0.1` | Soft minimum temperature `gamma > 0`. |
+| `max_shift` | int or (int, int) | `1` | `iota`-max shift. An int for one viewpoint axis; a pair `(azimuth, altitude)` for two axes. Values above K - 1 behave like K - 1. |
+| `metric` | str | `"euclidean"` | Base distance between blocks: `"euclidean"`, `"sqeuclidean"` or `"rbf"` (see `rbf_cost`, `sigma = 0.5`). |
 | `backend` | str | `"auto"` | `"auto"`, `"cuda"` or `"torch"`. |
 
 **forward**`(query, support, *, return_accumulator=False)`
@@ -235,7 +235,7 @@ torchwarp.jeanie_2d_from_features(query, support, *, gamma=0.1, max_shift_az=1,
 JEANIE with two viewpoint axes (azimuth and altitude), from features.
 `query` is `[K1, K2, T, D]` or `[B, K1, K2, T, D]`, `support` is
 `[U, D]` or `[B, U, D]`. `max_shift_az` and `max_shift_alt` are the
-ι-max shifts along the two axes.
+`iota`-max shifts along the two axes.
 
 **Returns** a scalar or `[B]` (and R `[B, K1, K2, T, U]` if requested).
 
@@ -326,8 +326,8 @@ arguments of `SoftDTW` in pytorch-softdtw-cuda.
 | argument | type | default | description |
 | --- | --- | --- | --- |
 | `use_cuda` | bool | `False` | Ignored; the device of the inputs decides where the computation runs. |
-| `gamma` | float | `1.0` | Soft minimum temperature γ, > 0. |
-| `normalize` | bool | `False` | If `True`, return the soft-DTW divergence d(X, Y) - ½ [d(X, X) + d(Y, Y)]. |
+| `gamma` | float | `1.0` | Soft minimum temperature `gamma > 0`. |
+| `normalize` | bool | `False` | If `True`, return the soft-DTW divergence `d(X, Y) - 0.5 * (d(X, X) + d(Y, Y))`. |
 | `bandwidth` | float or None | `None` | Sakoe-Chiba band, as in `UDTW`. |
 | `dist_func` | callable or None | `None` | Function `(X, Y)` returning the cost `[B, N, M]`. `None`: squared Euclidean distance; the CUDA kernel computes it without storing `[B, N, M]`. |
 
@@ -355,7 +355,7 @@ soft-DTW of a cost `[T, U]` (returns a scalar) or `[B, T, U]` (returns
 torchwarp.softmin(x, gamma, dim=None)
 ```
 
--γ log Σ exp(-x/γ) over `dim` (over all elements when `dim=None`).
+`-gamma * log(sum(exp(-x / gamma)))` over `dim` (over all elements when `dim=None`).
 
 ### `softmin_weights`
 
@@ -363,7 +363,7 @@ torchwarp.softmin(x, gamma, dim=None)
 torchwarp.softmin_weights(values, gamma, dim=0)
 ```
 
-The weights of the soft minimum, softmax(-values/γ) over `dim`.
+The weights of the soft minimum, `softmax(-values / gamma)` over `dim`.
 
 ---
 
@@ -385,7 +385,7 @@ For a support with viewpoints, add or remove the viewpoint axis with
 torchwarp.euclidean_cost(query, support)
 ```
 
-‖q - s‖, computed from one matrix product. Its gradient at distance 0 is
+`||q - s||`, computed from one matrix product. Its gradient at distance 0 is
 0.
 
 ### `squared_euclidean_cost`
@@ -394,7 +394,7 @@ torchwarp.euclidean_cost(query, support)
 torchwarp.squared_euclidean_cost(query, support)
 ```
 
-‖q - s‖².
+`||q - s||^2`.
 
 ### `rbf_cost`
 
@@ -402,7 +402,7 @@ torchwarp.squared_euclidean_cost(query, support)
 torchwarp.rbf_cost(query, support, sigma=0.5)
 ```
 
-Σ<sub>d</sub> [2 - 2 exp(-σ (q<sub>d</sub> - s<sub>d</sub>)²)]. Stores the
+`sum_d (2 - 2 * exp(-sigma * (q_d - s_d)^2))`. Stores the
 `[..., K, T, U, D]` difference tensor, so it uses more memory than the
 Euclidean distances.
 
@@ -420,11 +420,11 @@ dimension).
 | attribute | shape | description |
 | --- | --- | --- |
 | `distance` | `[B]` | The distance. |
-| `path_matrix` | `[B, T, U]` or `[B, K, T, U]` | SoftMin<sub>γ</sub>-selection of the path matrices: Σ<sub>i</sub> softmax(-w/γ)<sub>i</sub> Π<sub>i</sub>, over all paths Π<sub>i</sub> with path distances w<sub>i</sub>. Equal to the gradient of `distance` with respect to `cost`. |
+| `path_matrix` | `[B, T, U]` or `[B, K, T, U]` | `SoftMin_gamma`-selection of the path matrices: `sum_i softmax(-w / gamma)_i * Pi_i`, over all paths `Pi_i` with path distances `w_i`. Equal to the gradient of `distance` with respect to `cost`. |
 | `optimal_path` | list of lists | Per pair, the cells `(t, u)` (or `(t, u, k)`) of the path with the smallest distance, from `(0, 0)` to `(T - 1, U - 1)`. |
-| `cost` | `[B, T, U]` or `[B, K, T, U]` | The cost matrix the paths are computed on (for uDTW, D / Σ). |
-| `Sigma` | `[B, T, U]` | Variances Σ (uDTW only, otherwise `None`). |
-| `Omega` | `[B]` | Penalty β Ω (uDTW only, otherwise `None`). |
+| `cost` | `[B, T, U]` or `[B, K, T, U]` | The cost matrix the paths are computed on (for uDTW, `D / Sigma`). |
+| `Sigma` | `[B, T, U]` | Variances `Sigma` (uDTW only, otherwise `None`). |
+| `Omega` | `[B]` | Penalty `beta * Omega` (uDTW only, otherwise `None`). |
 | `angles` | list | Viewpoint labels, if given. |
 
 **Method** `plot(type="alignment", **kwargs)` draws the alignment with
@@ -512,9 +512,9 @@ torchwarp.plot.udtw_figure(X, Y, sigma_x, sigma_y, *, gammas=(0.01, 0.1),
                            beta=1.0, index=0, power=0.1, threshold=0.6)
 ```
 
-One row of panels for pair `index`: the sDTW path matrix for each γ in
-`gammas` (same D, Σ = 1), the uDTW path matrix for each γ, and the
-uncertainty Σ on the uDTW path for the first γ. Pixels are raised to the
+One row of panels for pair `index`: the sDTW path matrix for each `gamma` in
+`gammas` (same D, `Sigma = 1`), the uDTW path matrix for each `gamma`, and the
+uncertainty `Sigma` on the uDTW path for the first `gamma`. Pixels are raised to the
 power `power` so that faint paths are visible; `threshold` binarizes the
 path for the uncertainty panel. **Returns** a `Figure`.
 
@@ -537,7 +537,7 @@ each starting viewpoint.
 | `query`, `support` | `[K, T, D]` / `[U, D]`, or with a batch dimension. |
 | `angles` | One label (degrees) per query viewpoint. |
 | `max_shift` | An int, or a sequence of ints for one JEANIE panel each. |
-| `soft_dtw_gamma`, `fvm_gamma`, `jeanie_gamma` | Per-method γ (default `gamma`). |
+| `soft_dtw_gamma`, `fvm_gamma`, `jeanie_gamma` | Per-method `gamma` (default `gamma`). |
 | `query_poses`, `support_poses`, `bones` | Optional skeletons: `[K, T, J, 2]` and `[U, J, 2]` 2D joint positions and a list of joint index pairs. |
 | `pose_step` | Draw a skeleton every `pose_step` time steps. |
 | `axes`, `titles` | Existing 3D axes (one per panel) and panel captions. |
@@ -560,8 +560,8 @@ torchwarp.plot.uncertainty(a, *, index=0, ax=None, power=0.1, threshold=0.6,
                            hist=True, title=None)
 ```
 
-The binarized path of a uDTW `Alignment` multiplied by Σ (white = high
-uncertainty), with a histogram of Σ on the path when `hist=True`.
+The binarized path of a uDTW `Alignment` multiplied by `Sigma` (white = high
+uncertainty), with a histogram of `Sigma` on the path when `hist=True`.
 
 ### `plot.twoway`
 
@@ -570,7 +570,7 @@ torchwarp.plot.twoway(a, X, Y, *, index=0, ax=None, offset=None, step=1, title=N
 ```
 
 The two sequences of pair `index`, `Y` drawn `offset` below `X`, with a
-line from x<sub>i</sub> to y<sub>j</sub> for every `step`-th cell (i, j)
+line from `x_i` to `y_j` for every `step`-th cell (i, j)
 of `a.optimal_path[index]`. `X` and `Y` need one value per time step:
 `[N]`, `[N, 1]` or `[B, N, 1]` (for more features, pass one, e.g.
 `X[..., 0]`). `offset` defaults to 1.2 times the larger value range.
