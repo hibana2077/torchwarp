@@ -37,9 +37,9 @@ sigma_net = nn.Sequential(
     nn.Linear(32, 1),
     nn.Softplus(),
 ).cuda()
-# sigma must be positive: Softplus plus a floor of 0.1
-sx = sigma_net(X) + 0.1
-sy = sigma_net(Y) + 0.1
+# sigma must be positive: Softplus plus a floor of 0.5
+sx = sigma_net(X) + 0.5
+sy = sigma_net(Y) + 0.5
 
 # d and omega: [batch], one distance and one penalty per pair
 udtw = torchwarp.UDTW(gamma=1.0, normalize=True)

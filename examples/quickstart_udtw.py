@@ -18,15 +18,15 @@ target = torch.sin(t + torch.rand(B, 1, device=device)).unsqueeze(-1)       # [B
 
 pred = nn.Parameter(torch.zeros(B, N, D, device=device))                    # [B, N, 1]
 # SigmaNet: one uncertainty sigma per time step, [B, length, 1]
-# sigma must be positive: Softplus plus a floor of 0.1
+# sigma must be positive: Softplus plus a floor of 0.5
 sigma_net = nn.Sequential(nn.Linear(D, 16), nn.ReLU(), nn.Linear(16, 1), nn.Softplus()).to(device)
 
 udtw = UDTW(gamma=0.1)
 opt = torch.optim.Adam([pred, *sigma_net.parameters()], lr=0.05)
 
 for step in range(201):
-    sigma_x = sigma_net(pred) + 0.1                                         # [B, N, 1]
-    sigma_y = sigma_net(target) + 0.1                                       # [B, M, 1]
+    sigma_x = sigma_net(pred) + 0.5                                         # [B, N, 1]
+    sigma_y = sigma_net(target) + 0.5                                       # [B, M, 1]
     d, omega = udtw(pred, target, sigma_x, sigma_y, beta=0.1)               # [B], [B]
     loss = (d + omega).mean()
     opt.zero_grad()
