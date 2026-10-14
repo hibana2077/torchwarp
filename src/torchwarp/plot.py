@@ -117,29 +117,29 @@ def _sequence(x, index):
     if x.ndim == 2 and x.shape[1] == 1:
         x = x[:, 0]
     if x.ndim != 1:
-        raise ValueError("twoway() needs one value per time step, e.g. x[..., 0]")
+        raise ValueError("twoway() needs one value per time step, e.g. X[..., 0]")
     return x
 
 
-def twoway(a, x, y, *, index=0, ax=None, offset=None, step=1, title=None):
-    """Two 1-D sequences, y drawn below x, joined along the optimal path.
+def twoway(a, X, Y, *, index=0, ax=None, offset=None, step=1, title=None):
+    """Two 1-D sequences, Y drawn below X, joined along the optimal path.
 
-    x [N] (or [N, 1], [B, N, 1]) and y [M] are the sequences the alignment
+    X [N] (or [N, 1], [B, N, 1]) and Y [M] are the sequences the alignment
     was computed on; each cell (i, j) of ``a.optimal_path[index]`` draws a
-    line from x[i] to y[j], every ``step`` cells. ``offset``: vertical gap
+    line from X[i] to Y[j], every ``step`` cells. ``offset``: vertical gap
     between the two sequences (default: 1.2 times the larger value range).
     """
     plt = _plt()
     ax = ax or plt.gca()
-    x, y = _sequence(x, index), _sequence(y, index)
+    x, y = _sequence(X, index), _sequence(Y, index)
     if offset is None:
         offset = 1.2 * max(np.ptp(x), np.ptp(y), 1e-12)
     y = y - offset
     for cell in a.optimal_path[index][::step]:
         i, j = cell[0], cell[1]
         ax.plot([i, j], [x[i], y[j]], color="#999999", lw=0.6, zorder=1)
-    ax.plot(x, color=VIEW_COLORS[0], lw=1.6, label="x", zorder=2)
-    ax.plot(y, color=VIEW_COLORS[3], lw=1.6, label="y", zorder=2)
+    ax.plot(x, color=VIEW_COLORS[0], lw=1.6, label="X", zorder=2)
+    ax.plot(y, color=VIEW_COLORS[3], lw=1.6, label="Y", zorder=2)
     ax.set_yticks([])
     ax.set_xlabel("time step")
     ax.legend(loc="upper right", fontsize=8, frameon=False)

@@ -315,7 +315,7 @@ a = paths.udtw(x, y, sx, sy, gamma=0.1)
 fig, axes = plt.subplots(1, 3, figsize=(12, 3.5))
 a.plot("alignment", ax=axes[0])            # path matrix
 a.plot("uncertainty", ax=axes[1])          # Sigma on the path (uDTW only)
-a.plot("twoway", x=x, y=y, ax=axes[2])     # the sequences joined along the optimal path
+a.plot("twoway", X=x, Y=y, ax=axes[2])     # the sequences joined along the optimal path
 ```
 
 For viewpoint alignments (`paths.jeanie`, `paths.fvm`,

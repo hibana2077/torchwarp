@@ -182,7 +182,7 @@ python examples/plot_paths.py          # plot the paths of uDTW and JEANIE (need
 ```
 
 Every function in `torchwarp.paths` returns an `Alignment` that can draw
-itself, e.g. `a.plot("twoway", x=X, y=Y)`; see
+itself, e.g. `a.plot("twoway", X=X, Y=Y)`; see
 [Visualization](docs/usage.md#visualization).
 
 ## Experiments

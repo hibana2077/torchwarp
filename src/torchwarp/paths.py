@@ -59,7 +59,7 @@ class Alignment:
 
         type: "alignment" (path matrix), "uncertainty" (Sigma on the path,
         uDTW only), "twoway" (two 1-D sequences joined along the optimal
-        path; pass ``x`` and ``y``) or "path_3d" (optimal path in 3D, for
+        path; pass ``X`` and ``Y``) or "path_3d" (optimal path in 3D, for
         viewpoint alignments): the name of the ``torchwarp.plot`` function.
         Keyword arguments go to that function, e.g.
         ``index`` (batch item) and ``ax``. Returns the matplotlib axis.

@@ -432,12 +432,12 @@ dimension).
 `type` is the name of the function: `"alignment"`
 ([`plot.alignment`](#plotalignment)), `"uncertainty"`
 ([`plot.uncertainty`](#plotuncertainty), uDTW only), `"twoway"`
-([`plot.twoway`](#plottwoway), pass `x` and `y`) or `"path_3d"`
+([`plot.twoway`](#plottwoway), pass `X` and `Y`) or `"path_3d"`
 ([`plot.path_3d`](#plotpath_3d)); `kwargs` go to that function.
 
 ```python
 a = torchwarp.paths.udtw(X, Y, sx, sy, gamma=0.1)
-a.plot("twoway", x=X, y=Y, index=0)
+a.plot("twoway", X=X, Y=Y, index=0)
 ```
 
 ### `paths.udtw`
@@ -566,12 +566,12 @@ uncertainty), with a histogram of Σ on the path when `hist=True`.
 ### `plot.twoway`
 
 ```python
-torchwarp.plot.twoway(a, x, y, *, index=0, ax=None, offset=None, step=1, title=None)
+torchwarp.plot.twoway(a, X, Y, *, index=0, ax=None, offset=None, step=1, title=None)
 ```
 
-The two sequences of pair `index`, `y` drawn `offset` below `x`, with a
+The two sequences of pair `index`, `Y` drawn `offset` below `X`, with a
 line from x<sub>i</sub> to y<sub>j</sub> for every `step`-th cell (i, j)
-of `a.optimal_path[index]`. `x` and `y` need one value per time step:
+of `a.optimal_path[index]`. `X` and `Y` need one value per time step:
 `[N]`, `[N, 1]` or `[B, N, 1]` (for more features, pass one, e.g.
 `X[..., 0]`). `offset` defaults to 1.2 times the larger value range.
 

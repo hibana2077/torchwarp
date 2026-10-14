@@ -26,7 +26,7 @@ a = paths.udtw(X, Y, sigma_x.view(1, -1, 1), sigma_y.view(1, -1, 1), gamma=0.1)
 fig, axes = plt.subplots(1, 4, figsize=(15, 3.5))
 a.plot("alignment", ax=axes[0], title="path matrix")
 a.plot("uncertainty", ax=axes[1], title="Sigma on the path")
-a.plot("twoway", x=X, y=Y, ax=axes[2], step=2, title="optimal path")
+a.plot("twoway", X=X, Y=Y, ax=axes[2], step=2, title="optimal path")
 # the same fields drawn by hand
 axes[3].imshow(a.path_matrix[0], cmap="viridis", origin="lower")
 i, j = zip(*a.optimal_path[0])
