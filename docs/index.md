@@ -17,17 +17,17 @@ torchwarp is an accelerated PyTorch implementation of uncertainty-DTW and JEANIE
 * **Time step**: one entry of a sequence. For skeleton sequences, a time
   step is usually a **temporal block**: a few consecutive frames encoded
   into one feature vector.
-* **Base distance** $d(x_i, y_j)$: the distance between
+* **Base distance** $`d(x_i, y_j)`$: the distance between
   time step i of one sequence and time step j of the other, for example
   the (squared) Euclidean distance. The matrix of all base distances is D.
 * **Path**: a monotonic alignment of the two sequences from cell (0, 0)
   to cell (len_x - 1, len_y - 1) of D, moving by (1, 0), (0, 1) or (1, 1).
   The set of all paths is the **transportation plan**. The **path
-  distance** $w_i$ is the sum of D over the cells of path $\mathrm{Pi}_i$.
+  distance** $`w_i`$ is the sum of D over the cells of path $`\mathrm{Pi}_i`$.
 * **Soft minimum**
-  $\mathrm{SoftMin}_{\mathrm{gamma}}(w) = -\mathrm{gamma} \log \sum_i \exp(-w_i / \mathrm{gamma})$. soft-DTW,
-  uDTW and JEANIE are soft minima over path distances; $\mathrm{gamma} > 0$
-  controls how soft it is. As $\mathrm{gamma}$ goes to 0 it becomes the hard minimum (DTW).
+  $`\mathrm{SoftMin}_{\mathrm{gamma}}(w) = -\mathrm{gamma} \log \sum_i \exp(-w_i / \mathrm{gamma})`$. soft-DTW,
+  uDTW and JEANIE are soft minima over path distances; $`\mathrm{gamma} > 0`$
+  controls how soft it is. As $`\mathrm{gamma}`$ goes to 0 it becomes the hard minimum (DTW).
 * **Viewpoint** (JEANIE, FVM): the query skeleton sequence is rotated to
   K simulated camera viewpoints before it is encoded, which adds a
   viewpoint axis: `[views, length, features]`.

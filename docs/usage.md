@@ -6,19 +6,19 @@ Step-by-step usage of torchwarp. For the exact arguments and shapes of every fun
 
 uDTW compares two sequences, for example two time series, or two
 skeleton sequences encoded as one feature vector per temporal block.
-Each time step i of a sequence has an uncertainty $\mathrm{sigma}_i > 0$,
+Each time step i of a sequence has an uncertainty $`\mathrm{sigma}_i > 0`$,
 predicted from the features by a small network (SigmaNet in the
 paper). For time steps i of X and j of Y, uDTW uses the variance
-$\mathrm{Sigma}_{ij} = \frac{1}{2} (\mathrm{sigma}_i^2 + \mathrm{sigma}'^2_j)$ and returns two
+$`\mathrm{Sigma}_{ij} = \frac{1}{2} (\mathrm{sigma}_i^2 + \mathrm{sigma}'^2_j)`$ and returns two
 tensors of shape `[batch]`, one entry per pair (X[b], Y[b]):
 
 * `d`: the uDTW distance (Eq. 2), the soft minimum over all warping
-  paths of the sum of $\lVert x_i - y_j \rVert^2 / \mathrm{Sigma}_{ij}$ along the path;
-* `omega`: the penalty $\mathrm{Omega}$ (Eq. 3), $\mathrm{beta}$ times the sum of
-  $\log \mathrm{Sigma}_{ij}$ along the same soft-selected path.
+  paths of the sum of $`\lVert x_i - y_j \rVert^2 / \mathrm{Sigma}_{ij}`$ along the path;
+* `omega`: the penalty $`\mathrm{Omega}`$ (Eq. 3), $`\mathrm{beta}`$ times the sum of
+  $`\log \mathrm{Sigma}_{ij}`$ along the same soft-selected path.
 
 With `normalize=True` both are returned as
-$d(X, Y) - \frac{1}{2} \left[ d(X, X) + d(Y, Y) \right]$.
+$`d(X, Y) - \frac{1}{2} \left[ d(X, X) + d(Y, Y) \right]`$.
 
 ```python
 import torch
@@ -49,11 +49,11 @@ loss.backward()
 
 `uDTW` uses the squared Euclidean distance between time steps. To use
 another distance between time steps, build the two `[batch, len_x, len_y]`
-matrices of Eq. 2 and Eq. 3 yourself, $\mathrm{cost}_{ij} = d(x_i, y_j) / \mathrm{Sigma}_{ij}$
-and $\mathrm{penalty}_{ij} = \mathrm{beta} \log \mathrm{Sigma}_{ij}$, and pass them to
+matrices of Eq. 2 and Eq. 3 yourself, $`\mathrm{cost}_{ij} = d(x_i, y_j) / \mathrm{Sigma}_{ij}`$
+and $`\mathrm{penalty}_{ij} = \mathrm{beta} \log \mathrm{Sigma}_{ij}`$, and pass them to
 `udtw_from_cost`. Here `pairwise_matrices` returns the default cost, the
-penalty and $\mathrm{Sigma}$, and the cost is replaced by the cosine distance
-$d(x_i, y_j) = 1 - \cos(x_i, y_j)$:
+penalty and $`\mathrm{Sigma}`$, and the cost is replaced by the cosine distance
+$`d(x_i, y_j) = 1 - \cos(x_i, y_j)`$:
 
 ```python
 # default matrices, each [batch, len_x, len_y]
@@ -115,8 +115,8 @@ Here a skeleton sequence is `[frames, joints, 3]`, `query` is
 `JEANIE` takes a batch, `[batch, views, blocks, features]` and
 `[batch, blocks, features]`, and returns `dist` of shape `[batch]`, the
 JEANIE distance of each query and support pair. `max_shift` is the
-$\mathrm{iota}$-max shift: along the path, the viewpoint index changes by at most
-$\mathrm{iota}$ from one step to the next.
+$`\mathrm{iota}`$-max shift: along the path, the viewpoint index changes by at most
+$`\mathrm{iota}`$ from one step to the next.
 
 The accumulator tensor R of Algorithm 1, `[batch, views, blocks_q,
 blocks_s]`, is returned with:
@@ -271,7 +271,7 @@ print(torch.autograd.gradcheck(lambda x: f(x, s64), (q64,)))
 `SoftDTW` takes two batches of sequences and has the arguments of
 `SoftDTW` in pytorch-softdtw-cuda, so code written for it runs after
 changing the import. `normalize=True` gives the soft-DTW divergence
-$\mathrm{sDTW}(x, y) - \frac{1}{2} \left[ \mathrm{sDTW}(x, x) + \mathrm{sDTW}(y, y) \right]$.
+$`\mathrm{sDTW}(x, y) - \frac{1}{2} \left[ \mathrm{sDTW}(x, x) + \mathrm{sDTW}(y, y) \right]`$.
 
 ```python
 # x, y: [batch, length, features]
@@ -350,9 +350,9 @@ plt.plot(j, i, "w-")
 | `Sigma` | `[B, T, U]` | heatmap of the uncertainty | uDTW |
 | `distance`, `Omega` | `[B]` | values, e.g. in titles or legends | all (`Omega`: uDTW) |
 
-`a.path_matrix` is $\mathrm{SoftMinSel}_{\mathrm{gamma}}(w, [\mathrm{Pi}_i])$: the path matrices
-$\mathrm{Pi}_i$ of all paths, weighted by the soft-selector of Eq. 3 over their
-path distances $w_i$. It is also the gradient
+`a.path_matrix` is $`\mathrm{SoftMinSel}_{\mathrm{gamma}}(w, [\mathrm{Pi}_i])`$: the path matrices
+$`\mathrm{Pi}_i`$ of all paths, weighted by the soft-selector of Eq. 3 over their
+path distances $`w_i`$. It is also the gradient
 of the distance with respect to the cost matrix:
 
 ```python
