@@ -37,7 +37,7 @@ def test_cost_on_sequence_pairs():
 def test_udtw_module(backend, device):
     g = torch.Generator().manual_seed(0)
     X, Y = torch.rand(3, 6, 4, generator=g, **f64), torch.rand(3, 8, 4, generator=g, **f64)
-    SX, SY = 0.5 + torch.rand(3, 6, 1, generator=g, **f64), 0.5 + torch.rand(3, 8, 1, generator=g, **f64)
+    SX, SY = torch.rand(3, 6, 1, generator=g, **f64) + 0.5, torch.rand(3, 8, 1, generator=g, **f64) + 0.5
     xs = [t.to(device).requires_grad_() for t in (X, Y, SX, SY)]
     d, p = UDTW(gamma=0.3, backend=backend)(*xs, beta=0.5)
     assert d.shape == p.shape == (3,)

@@ -17,7 +17,8 @@ t = torch.linspace(0, 6.28, M, device=device)
 target = torch.sin(t + torch.rand(B, 1, device=device)).unsqueeze(-1)       # [B, M, 1]
 
 pred = nn.Parameter(torch.zeros(B, N, D, device=device))                    # [B, N, 1]
-# SigmaNet: one positive uncertainty sigma per time step, [..., length, 1]
+# SigmaNet: one uncertainty sigma per time step, [B, length, 1]
+# sigma must be positive: Softplus plus a floor of 0.1
 sigma_net = nn.Sequential(nn.Linear(D, 16), nn.ReLU(), nn.Linear(16, 1), nn.Softplus()).to(device)
 
 udtw = UDTW(gamma=0.1)

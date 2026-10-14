@@ -41,9 +41,9 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 # Y: [B, M, D],  sigma_y: [B, M, 1]
 X = torch.randn(4, 30, 8, device=device, requires_grad=True)
 Y = torch.randn(4, 40, 8, device=device)
+# sigma must be positive: shift to [0.5, 1.5)
 sigma_x = torch.rand(4, 30, 1, device=device) + 0.5
 sigma_y = torch.rand(4, 40, 1, device=device) + 0.5
-# sigma must be positive, so add 0.5
 
 udtw = UDTW(gamma=1.0)
 d, omega = udtw(X, Y, sigma_x, sigma_y, beta=1.0)

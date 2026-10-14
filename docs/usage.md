@@ -30,15 +30,16 @@ import torchwarp
 X = torch.randn(16, 30, 8, device="cuda", requires_grad=True)
 Y = torch.randn(16, 40, 8, device="cuda")
 
-# uncertainty sigma per time step: [batch, length, 1], positive
+# SigmaNet: one uncertainty sigma per time step, [batch, length, 1]
 sigma_net = nn.Sequential(
     nn.Linear(8, 32),
     nn.ReLU(),
     nn.Linear(32, 1),
     nn.Softplus(),
 ).cuda()
-sx = sigma_net(X) + 1e-3
-sy = sigma_net(Y) + 1e-3
+# sigma must be positive: Softplus plus a floor of 0.1
+sx = sigma_net(X) + 0.1
+sy = sigma_net(Y) + 0.1
 
 # d and omega: [batch], one distance and one penalty per pair
 udtw = torchwarp.UDTW(gamma=1.0, normalize=True)
