@@ -12,10 +12,12 @@
 
 This repository provides implementations of uDTW, JEANIE, and FVM, along with usage examples and experiments demonstrating their performance.
 
-## Features
+## Documentation
 
-- **uDTW, JEANIE and FVM:** differentiable alignment, with forward values and gradients validated against the original implementations (see `tests/` directory).
-- **CUDA acceleration:** up to 963× faster training steps in the NW-UCLA benchmark (see [Results](#results)).
+- [Installation](docs/installation.md): CUDA, uv, and optional dependencies.
+- [Usage](docs/usage.md): step-by-step usage of uDTW, JEANIE, FVM and soft-DTW.
+- [API reference](docs/api.md): arguments, shapes and return values.
+- [Benchmarks](docs/benchmarks.md): experimental setups and results.
 
 ## Installation
 
@@ -114,7 +116,7 @@ query is rotated to `K` simulated camera viewpoints before encoding.
 For batched inputs and more advanced configurations, including two
 viewpoint axes, see the [usage guide](docs/usage.md).
 
-## Results
+## Example
 
 ### Performance
 
@@ -212,13 +214,6 @@ for l in euclidean dtw sdtw sdtw_div udtw; do python experiments/ecg5000_forecas
 python experiments/ecg5000_tune.py run && python experiments/ecg5000_tune.py select
 python experiments/ecg5000_speed.py
 ```
-
-## Documentation
-
-- [Installation](docs/installation.md): CUDA, uv, and optional dependencies.
-- [Usage](docs/usage.md): step-by-step usage of uDTW, JEANIE, FVM and soft-DTW.
-- [API reference](docs/api.md): arguments, shapes and return values.
-- [Benchmarks](docs/benchmarks.md): experimental setups and results.
 
 ## Acknowledgements
 
