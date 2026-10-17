@@ -137,11 +137,7 @@ functions, see the [usage guide](docs/usage.md) and the
 
 #### Time series forecasting (ECG5000)
 
-Predict the last 40% of each series from the first 60%; test metrics of
-the MLP trained with each loss (mean ± std over seeds 42, 43, 44; lower is
-better). soft-DTW and soft-DTW divergence use $\gamma = 0.001$; the uDTW
-hyperparameters were selected on a validation split of the training set
-([`ecg5000_tune.py`](experiments/ecg5000_tune.py)).
+We evaluate multistep forecasting on UCR ECG5000 using the official train/test split (500/4,500 series) without additional normalization. An MLP (84-256-56, ReLU) predicts the last 40% of each series from the first 60%, trained with Adam (lr=0.001, batch size=50) for 100 epochs under identical settings across losses. Results are reported as mean and std over three seeds (42, 43, 44), using MSE and DTW-based evaluation metrics. Soft-DTW and its divergence use γ=0.001.
 
 | loss | MSE | DTW | sDTW div. | uDTW |
 | --- | --- | --- | --- | --- |
@@ -153,8 +149,7 @@ hyperparameters were selected on a validation split of the training set
 
 #### Few-shot action recognition (NW-UCLA)
 
-5-way 1-shot cross-view classification accuracy (mean ± std over seeds
-42, 43, 44).
+We evaluate cross-view 5-way 1-shot skeleton action recognition on NW-UCLA Multiview Action3D, using the `all_sqe` skeleton data provided by CTR-GCN. Sequences are hip-centered, resampled to 32 frames, and divided into seven overlapping 8-frame blocks. An MLP encoder (480-256-64, ReLU) is trained from scratch with Adam for 300 episodes, comparing sDTW, sDTW divergence, uDTW, FVM, and JEANIE. Five disjoint classes are used for training and testing, with views 1–2 used for training and support samples, and unseen view 3 for test queries. Results are reported as mean and std of top-1 accuracy over three seeds (42, 43, 44), each evaluated on 300 episodes (7,500 queries). The experiment follows the established NW-UCLA cross-view split but uses a custom few-shot protocol and MLP encoder.
 
 | method | accuracy (%) |
 | --- | --- |
