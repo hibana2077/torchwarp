@@ -131,9 +131,9 @@ For two viewpoint axes, other base distances and the full list of
 functions, see the [usage guide](docs/usage.md) and the
 [API reference](docs/api.md).
 
-## Example
+## Experiments
 
-### Performance
+### Quantitative results
 
 #### Time series forecasting (ECG5000)
 
@@ -165,13 +165,7 @@ hyperparameters were selected on a validation split of the training set
 | JEANIE (1-max shift) | 38.75 ± 1.91 |
 | JEANIE (2-max shift) | 37.08 ± 2.37 |
 
-Alignment paths of soft-DTW (per viewpoint), FVM and JEANIE for a query
-(view 3) and a support (view 1) of the action donning, with the trained
-JEANIE encoder (seed 42):
-
-![soft-DTW, FVM and JEANIE paths on NW-UCLA](assets/viewpoint_paths_nwucla.png)
-
-### Speed-up
+#### Speed-up
 
 Mean training-step time in ms (forward and backward; one 5-way 1-shot
 episode for NW-UCLA, a batch of 50 series for ECG5000) of the original
@@ -187,6 +181,25 @@ the two on the same device.
 | uDTW | ECG5000 | 1006.9 | 88.6 | 11× | 1856.0 | 2.18 | 852× |
 
 Hardware, software versions, timing method and experimental settings are in [benchmarks](docs/benchmarks.md).
+
+### Qualitative results
+
+#### uDTW
+
+Alignment paths of sDTW and uDTW for $\gamma = 0.01$ and $0.1$, and the
+uncertainty $\sigma$ on the uDTW path with its histogram, for ECG5000 test
+series 204: the forecast of the trained uDTW model (seed 42) vs. the ground
+truth.
+
+![sDTW and uDTW paths on ECG5000](assets/udtw_paths_ecg5000.png)
+
+#### FVM and JEANIE
+
+Alignment paths of soft-DTW (per viewpoint), FVM and JEANIE for a query
+(view 3) and a support (view 1) of the action donning, with the trained
+JEANIE encoder (seed 42):
+
+![soft-DTW, FVM and JEANIE paths on NW-UCLA](assets/viewpoint_paths_nwucla.png)
 
 ## Acknowledgements
 
