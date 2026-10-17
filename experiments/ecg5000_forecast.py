@@ -42,7 +42,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from torchwarp import UDTW, soft_dtw
+import torchwarp.functional as TF
+from torchwarp import UDTW
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "experiments" / "data"
@@ -180,15 +181,15 @@ def make_loss(name, cfg):
         return lambda pred, y, sigma: hard_dtw_loss(pred, y).mean()
     if name in ("sdtw", "sdtw_div"):
         def sdtw(a, b):
-            return soft_dtw((a.unsqueeze(2) - b.unsqueeze(1)) ** 2, cfg["gamma"])
+            return TF.soft_dtw_from_cost((a.unsqueeze(2) - b.unsqueeze(1)) ** 2, gamma=cfg["gamma"])
         if name == "sdtw":
             return lambda pred, y, sigma: sdtw(pred, y).mean()
         return lambda pred, y, sigma: (sdtw(pred, y) - 0.5 * (sdtw(pred, pred) + sdtw(y, y))).mean()
-    crit = UDTW(gamma=cfg["gamma"], normalize=cfg["normalize"])
+    crit = UDTW(gamma=cfg["gamma"], beta=cfg["beta"], normalize=cfg["normalize"])
 
     def loss(pred, y, sigma):
         d, p = crit(pred.unsqueeze(-1), y.unsqueeze(-1),
-                    sigma(pred).unsqueeze(-1), sigma(y).unsqueeze(-1), beta=cfg["beta"])
+                    sigma(pred).unsqueeze(-1), sigma(y).unsqueeze(-1))
         return (d + p).mean()
     return loss
 
@@ -261,14 +262,15 @@ def eval_sigmanet(setup, train, device):
 
 def evaluate(f, sigma_eval, test, cfg):
     """Test metrics; sigma_eval = the evaluation SigmaNet, or None to skip uDTW."""
-    metric = UDTW(gamma=1.0, normalize=True, backend="torch")
+    metric = UDTW(gamma=1.0, beta=1.0, normalize=True, backend="torch")
+    sdtw_metric = UDTW(gamma=1.0, beta=0.0, normalize=True, backend="torch")
     x = test[:, :cfg["input_len"]].double()
     y = test[:, cfg["input_len"]:].double()
     with torch.no_grad():
         pred = f.double()(x)
         p3, y3 = pred.unsqueeze(-1), y.unsqueeze(-1)
         one = torch.ones_like(y3)
-        sdtw_div, _ = metric(p3, y3, one, one, beta=0.0)      # sigma = 1: soft-DTW
+        sdtw_div, _ = sdtw_metric(p3, y3, one, one)           # sigma = 1: soft-DTW
         se = (pred - y) ** 2
         out = dict(
             mse=float(se.mean()),
@@ -277,8 +279,7 @@ def evaluate(f, sigma_eval, test, cfg):
             sdtw_div=float(sdtw_div.mean()),
         )
         if sigma_eval is not None:
-            d, pen = metric(p3, y3, sigma_eval(pred).unsqueeze(-1), sigma_eval(y).unsqueeze(-1),
-                            beta=1.0)
+            d, pen = metric(p3, y3, sigma_eval(pred).unsqueeze(-1), sigma_eval(y).unsqueeze(-1))
             out["udtw"] = float((d + pen).mean())
         return out
 

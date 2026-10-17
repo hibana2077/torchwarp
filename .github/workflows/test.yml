@@ -14,6 +14,7 @@ jobs:
 
   test:
     # CPU only: the CUDA kernels are tested locally; tests that need them skip here.
+    # The official reference outputs are stored in tests/golden; nothing is downloaded.
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false

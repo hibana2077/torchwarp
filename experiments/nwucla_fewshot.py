@@ -33,6 +33,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 import torchwarp
+import torchwarp.functional as TF
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "experiments" / "data" / "nwucla" / "all_sqe"
@@ -133,22 +134,20 @@ def make_distance(method, cfg, sigma_head):
     gamma = cfg["gamma"]
 
     def sdtw(a, b):                                   # [P,T,E], [P,U,E] -> [P]
-        return torchwarp.soft_dtw(torchwarp.euclidean_cost(a.unsqueeze(1), b)[:, 0], gamma)
+        return TF.soft_dtw_from_cost(torchwarp.euclidean_cost(a.unsqueeze(1), b)[:, 0], gamma=gamma)
 
     def udtw(a, b):
-        d, pen = torchwarp.udtw_from_features(a, b, sigma_head(a), sigma_head(b),
-                                              beta=cfg["beta"], gamma=gamma)
+        d, pen = TF.udtw(a, b, sigma_head(a), sigma_head(b), beta=cfg["beta"], gamma=gamma)
         return d + pen
 
     def dist(q, s):
         nq, ns = q.shape[0], s.shape[0]
         if method == "jeanie":
             qq, ss = all_pairs(q, s)
-            return torchwarp.jeanie_1d_from_features(
-                qq, ss, gamma=gamma, max_shift=cfg["max_shift"]).view(nq, ns)
+            return TF.jeanie(qq, ss, gamma=gamma, max_shift=cfg["max_shift"]).view(nq, ns)
         if method == "fvm":
             qq, ss = all_pairs(q, s)
-            return torchwarp.fvm_query_only_1d(torchwarp.euclidean_cost(qq, ss), gamma).view(nq, ns)
+            return TF.fvm(qq, ss, gamma=gamma).view(nq, ns)
         q = q[:, view0]
         qq, ss = all_pairs(q, s)
         if method == "sdtw":

@@ -1,6 +1,9 @@
 # Usage
 
-Step-by-step usage of torchwarp. For the exact arguments and shapes of every function see the [API reference](api.md); for installation see [Installation](installation.md).
+Step-by-step usage of torchwarp. Like `torch.nn`, every method is a
+module (`torchwarp.UDTW`, `torchwarp.SoftDTW`, `torchwarp.JEANIE`,
+`torchwarp.FVM`) with a matching function in `torchwarp.functional`, and
+every input has a leading batch dimension. For the exact arguments and shapes of every function see the [API reference](api.md); for installation see [Installation](installation.md).
 
 ## uDTW
 
@@ -41,27 +44,29 @@ sx = sigma_net(X) + 0.5
 sy = sigma_net(Y) + 0.5
 
 # d and omega: [batch], one distance and one penalty per pair
-udtw = torchwarp.UDTW(gamma=1.0, normalize=True)
-d, omega = udtw(X, Y, sx, sy, beta=1.0)
+udtw = torchwarp.UDTW(gamma=1.0, beta=1.0, normalize=True)
+d, omega = udtw(X, Y, sx, sy)
 loss = (d + omega).mean()
 loss.backward()
 ```
 
-`uDTW` uses the squared Euclidean distance between time steps. To use
+`UDTW` uses the squared Euclidean distance between time steps. To use
 another distance between time steps, build the two `[batch, len_x, len_y]`
 matrices of Eq. 2 and Eq. 3 yourself, $\mathrm{cost} _{ij} = d(x _i, y _j) / \Sigma _{ij}$
 and $\mathrm{penalty} _{ij} = \beta \log \Sigma _{ij}$, and pass them to
-`udtw_from_cost`. Here `pairwise_matrices` returns the default cost, the
+`TF.udtw_from_cost`. Here `TF.pairwise_matrices` returns the default cost, the
 penalty and $\Sigma$, and the cost is replaced by the cosine distance
 $d(x_i, y_j) = 1 - \cos(x_i, y_j)$:
 
 ```python
+import torchwarp.functional as TF
+
 # default matrices, each [batch, len_x, len_y]
-cost, penalty, Sigma = torchwarp.pairwise_matrices(X, Y, sx, sy, beta=1.0)
+cost, penalty, Sigma = TF.pairwise_matrices(X, Y, sx, sy, beta=1.0)
 
 # cosine distance between time steps instead of the squared Euclidean one
 cos = nn.functional.cosine_similarity(X.unsqueeze(2), Y.unsqueeze(1), dim=-1)
-d, omega = torchwarp.udtw_from_cost((1 - cos) / Sigma, penalty, gamma=1.0)
+d, omega = TF.udtw_from_cost((1 - cos) / Sigma, penalty, gamma=1.0)
 ```
 
 ## JEANIE
@@ -100,19 +105,19 @@ query_skeleton = torch.randn(32, 20, 3)
 support_skeleton = torch.randn(32, 20, 3)
 encoder = nn.Linear(8 * 20 * 3, 64)
 
-# query: [views, blocks, features], support: [blocks, features]
+# one pair, with a batch dimension of 1:
+# query [1, views, blocks, features], support [1, blocks, features]
 query = torch.stack(
-    [encoder(blocks(rotate(query_skeleton, a))) for a in angles])
-support = encoder(blocks(support_skeleton))
+    [encoder(blocks(rotate(query_skeleton, a))) for a in angles]).unsqueeze(0)
+support = encoder(blocks(support_skeleton)).unsqueeze(0)
 
 # dist: [batch]
 jeanie = torchwarp.JEANIE(gamma=0.1, max_shift=1)
-dist = jeanie(query.unsqueeze(0), support.unsqueeze(0))
+dist = jeanie(query, support)
 ```
 
-Here a skeleton sequence is `[frames, joints, 3]`, `query` is
-`[views, blocks, features]` and `support` is `[blocks, features]`;
-`JEANIE` takes a batch, `[batch, views, blocks, features]` and
+Here a skeleton sequence is `[frames, joints, 3]`; `JEANIE` takes a
+batch of queries `[batch, views, blocks, features]` and supports
 `[batch, blocks, features]`, and returns `dist` of shape `[batch]`, the
 JEANIE distance of each query and support pair. `max_shift` is the
 $\iota$-max shift: along the path, the viewpoint index changes by at most
@@ -123,19 +128,17 @@ blocks_s]`, is returned with:
 
 ```python
 # R: [batch, views, blocks_q, blocks_s]
-dist, R = jeanie(query.unsqueeze(0), support.unsqueeze(0),
-                 return_accumulator=True)
+dist, R = jeanie(query, support, return_accumulator=True)
 ```
 
 With two viewpoint axes (azimuth and altitude) the query is
-`[batch, views_az, views_alt, blocks, features]` and `max_shift` is a
-pair. FVM takes the matrix of base distances between every query view
-and the support:
+`[batch, views_az, views_alt, blocks, features]`; an int `max_shift`
+applies to both axes and a pair sets them separately. FVM lets the
+viewpoint change freely at every step and takes the same inputs:
 
 ```python
-# base distances: [batch, views, blocks_q, blocks_s]
-D = torchwarp.euclidean_cost(query.unsqueeze(0), support.unsqueeze(0))
-d_fvm = torchwarp.fvm_query_only_1d(D, gamma=0.1)
+fvm = torchwarp.FVM(gamma=0.1)
+d_fvm = fvm(query, support)   # [batch]
 ```
 
 ### Example: classify the queries of a few-shot episode
@@ -183,13 +186,11 @@ more, and `max_shift = K - 1` lets it move freely, which equals FVM. The
 distance can only decrease as `max_shift` grows:
 
 ```python
-D = torchwarp.euclidean_cost(query.unsqueeze(0), support.unsqueeze(0))
-
 for shift in range(len(angles)):
-    d = torchwarp.jeanie_1d_from_cost(D, gamma=0.1, max_shift=shift)
+    d = torchwarp.JEANIE(gamma=0.1, max_shift=shift)(query, support)
     print("max_shift", shift, d.item())
 
-print("FVM", torchwarp.fvm_query_only_1d(D, gamma=0.1).item())
+print("FVM", torchwarp.FVM(gamma=0.1)(query, support).item())
 ```
 
 ### Example: which viewpoint the path uses
@@ -223,15 +224,15 @@ def rotate_x(skeleton, degrees):
 azimuths = [-30, 0, 30]
 altitudes = [-15, 0, 15]
 
-# query_2d: [views_az, views_alt, blocks, features]
+# query_2d: [1, views_az, views_alt, blocks, features]
 query_2d = torch.stack([
     torch.stack([encoder(blocks(rotate_x(rotate(query_skeleton, az), alt)).to(device))
                  for alt in altitudes])
-    for az in azimuths])
-support_2d = encoder(blocks(support_skeleton).to(device))
+    for az in azimuths]).unsqueeze(0)
+support_2d = encoder(blocks(support_skeleton).to(device)).unsqueeze(0)
 
 jeanie_2d = torchwarp.JEANIE(gamma=0.1, max_shift=(1, 1))
-dist_2d = jeanie_2d(query_2d.unsqueeze(0), support_2d.unsqueeze(0))
+dist_2d = jeanie_2d(query_2d, support_2d)
 ```
 
 ### Example: another base distance
@@ -239,17 +240,18 @@ dist_2d = jeanie_2d(query_2d.unsqueeze(0), support_2d.unsqueeze(0))
 `metric` selects the distance between blocks (`"euclidean"`,
 `"sqeuclidean"` or `"rbf"`). For any other distance, compute the tensor
 of base distances yourself, `[batch, views, blocks_q, blocks_s]`, and
-call `jeanie_1d_from_cost`, here with the cosine distance:
+call `TF.jeanie_from_cost` (or `TF.fvm_from_cost`), here with the cosine
+distance:
 
 ```python
 jeanie_sq = torchwarp.JEANIE(gamma=0.1, max_shift=1, metric="sqeuclidean")
-d_sq = jeanie_sq(query.unsqueeze(0), support.unsqueeze(0))
+d_sq = jeanie_sq(query, support)
 
 # cosine distance between every query block (per view) and support block
-qn = nn.functional.normalize(query, dim=-1)
-sn = nn.functional.normalize(support, dim=-1)
-D_cos = 1 - qn @ sn.T
-d_cos = torchwarp.jeanie_1d_from_cost(D_cos.unsqueeze(0), gamma=0.1, max_shift=1)
+qn = nn.functional.normalize(query, dim=-1)                  # [1, views, blocks_q, features]
+sn = nn.functional.normalize(support, dim=-1)                # [1, blocks_s, features]
+D_cos = 1 - qn @ sn.transpose(-1, -2).unsqueeze(1)           # [1, views, blocks_q, blocks_s]
+d_cos = TF.jeanie_from_cost(D_cos, gamma=0.1, max_shift=1)
 ```
 
 ### Example: backend and precision
@@ -268,9 +270,7 @@ print(torch.autograd.gradcheck(lambda x: f(x, s64), (q64,)))
 
 ## soft-DTW and soft-DTW divergence
 
-`SoftDTW` takes two batches of sequences and has the arguments of
-`SoftDTW` in pytorch-softdtw-cuda, so code written for it runs after
-changing the import. `normalize=True` gives the soft-DTW divergence
+`SoftDTW` takes two batches of sequences. `normalize=True` gives the soft-DTW divergence
 $\mathrm{sDTW}(x, y) - \frac{1}{2} \left[ \mathrm{sDTW}(x, x) + \mathrm{sDTW}(y, y) \right]$.
 
 ```python
@@ -282,11 +282,12 @@ d_sdtw = torchwarp.SoftDTW(gamma=0.1)(x, y)                  # [batch]
 d_div = torchwarp.SoftDTW(gamma=0.1, normalize=True)(x, y)   # [batch]
 ```
 
-`soft_dtw` takes a precomputed base distance matrix `[T, U]` or
-`[B, T, U]`:
+In functional form, `TF.soft_dtw` takes the sequences and
+`TF.soft_dtw_from_cost` a precomputed base distance matrix `[B, T, U]`:
 
 ```python
-d_sdtw = torchwarp.soft_dtw(torchwarp.squared_euclidean_cost(x, y), gamma=0.1)
+d_sdtw = TF.soft_dtw(x, y, gamma=0.1)
+d_sdtw = TF.soft_dtw_from_cost(torchwarp.squared_euclidean_cost(x, y), gamma=0.1)
 ```
 
 ## Visualization
@@ -330,7 +331,7 @@ fig = plot.udtw_figure(x, y, sx, sy, gammas=(0.01, 0.1))  # sDTW and uDTW per ga
 fig = plot.viewpoint_figure(query, support, angles, max_shift=(1, 2))  # soft-DTW, FVM, JEANIE
 ```
 
-`query` is `[K, T, D]`, `support` is `[U, D]` and `angles` holds one
+`query` is `[B, K, T, D]`, `support` is `[B, U, D]` and `angles` holds one
 label per query viewpoint. To also draw skeletons, pass `query_poses`,
 `support_poses` and `bones`.
 
@@ -357,10 +358,10 @@ of the distance with respect to the cost matrix:
 
 ```python
 with torch.no_grad():
-    cost, penalty, Sigma = torchwarp.pairwise_matrices(x, y, sx, sy)
+    cost, penalty, Sigma = TF.pairwise_matrices(x, y, sx, sy)
 cost.requires_grad_(True)
 
-d, omega = torchwarp.udtw_from_cost(cost, penalty, gamma=0.1)
+d, omega = TF.udtw_from_cost(cost, penalty, gamma=0.1)
 d.sum().backward()
 
 cost.grad  # equals a.path_matrix

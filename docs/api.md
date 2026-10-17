@@ -10,72 +10,74 @@ Shapes use these letters:
 | `B` | batch size (number of sequence pairs) |
 | `N`, `M` | lengths of the two sequences compared by uDTW |
 | `T`, `U` | lengths of the query and the support sequence (JEANIE, FVM, soft-DTW) |
-| `K` | number of query viewpoints (`K1`, `K2` for two viewpoint axes; `Kq`, `Ks` for query and support viewpoints in full FVM) |
+| `K` | number of query viewpoints (`K1`, `K2` for two viewpoint axes; `K'` for support viewpoints in FVM) |
 | `D` | feature dimension |
 
-All functions are differentiable. `backend` is always one of `"auto"`,
-`"cuda"` or `"torch"`, see [Common behaviour](index.md#common-behaviour).
+The API follows `torch.nn`: each method is a module in `torchwarp`
+(hyperparameters in the constructor, tensors in `forward`) and a function
+of the same name in `torchwarp.functional` (hyperparameters as
+keyword-only arguments). The `*_from_cost` functions take a precomputed
+cost tensor instead of features. Every input has a leading batch
+dimension `B`. All functions are differentiable. `backend` is always one
+of `"auto"`, `"cuda"` or `"torch"`, see
+[Common behaviour](index.md#common-behaviour).
 
-**Compatibility.** Every name exported by the official `udtw` and
-`jeanie` packages exists in `torchwarp` with the same positional
-arguments, so `from udtw import uDTW` or `from jeanie import ...` can be
-replaced by `from torchwarp import ...`. `SoftDTW` takes the arguments of
-`SoftDTW` in pytorch-softdtw-cuda. The options torchwarp adds, and the
-options of torchwarp's own functions, are keyword-only: they follow `*`
-in the signatures below. In `jeanie_1d_*`, `jeanie_2d_*` and `fvm_*_1d`,
-`fvm_*_2d`, "1d" and "2d" are the number of viewpoint axes.
+```python
+import torchwarp
+import torchwarp.functional as TF
+```
 
-Contents:
+| method | module | function | on a precomputed cost |
+| --- | --- | --- | --- |
+| uDTW | [`UDTW`](#udtw) | [`TF.udtw`](#tfudtw) | [`TF.udtw_from_cost`](#tfudtw_from_cost) |
+| soft-DTW | [`SoftDTW`](#softdtw) | [`TF.soft_dtw`](#tfsoft_dtw) | [`TF.soft_dtw_from_cost`](#tfsoft_dtw_from_cost) |
+| JEANIE | [`JEANIE`](#jeanie) | [`TF.jeanie`](#tfjeanie) | [`TF.jeanie_from_cost`](#tfjeanie_from_cost) |
+| FVM | [`FVM`](#fvm) | [`TF.fvm`](#tffvm) | [`TF.fvm_from_cost`](#tffvm_from_cost) |
 
-* uDTW: [`UDTW`](#udtw), [`udtw_from_features`](#udtw_from_features), [`udtw_from_cost`](#udtw_from_cost), [`pairwise_matrices`](#pairwise_matrices)
-* JEANIE: [`JEANIE`](#jeanie), [`jeanie_1d_from_features`](#jeanie_1d_from_features), [`jeanie_1d_from_cost`](#jeanie_1d_from_cost), [`jeanie_2d_from_features`](#jeanie_2d_from_features), [`jeanie_2d_from_cost`](#jeanie_2d_from_cost)
-* FVM: [`fvm_query_only_1d`](#fvm_query_only_1d), [`fvm_query_only_2d`](#fvm_query_only_2d), [`fvm_1d_from_cost`](#fvm_1d_from_cost), [`fvm_2d_from_cost`](#fvm_2d_from_cost), [`fvm_from_cost`](#fvm_from_cost)
-* soft-DTW: [`SoftDTW`](#softdtw), [`soft_dtw`](#soft_dtw), [`softmin`](#softmin), [`softmin_weights`](#softmin_weights)
-* Base distances: [`euclidean_cost`](#euclidean_cost), [`squared_euclidean_cost`](#squared_euclidean_cost), [`rbf_cost`](#rbf_cost)
-* [`torchwarp.paths`](#torchwarppaths): [`Alignment`](#alignment), [`udtw`](#pathsudtw), [`soft_dtw`](#pathssoft_dtw), [`soft_dtw_per_view`](#pathssoft_dtw_per_view), [`fvm`](#pathsfvm), [`jeanie`](#pathsjeanie), [`optimal_path`](#pathsoptimal_path)
-* [`torchwarp.plot`](#torchwarpplot): [`udtw_figure`](#plotudtw_figure), [`viewpoint_figure`](#plotviewpoint_figure), [`alignment`](#plotalignment), [`uncertainty`](#plotuncertainty), [`twoway`](#plottwoway), [`path_3d`](#plotpath_3d)
+Also: [`TF.pairwise_matrices`](#tfpairwise_matrices),
+[`TF.softmin`](#tfsoftmin), [`TF.softmin_weights`](#tfsoftmin_weights),
+the [base distances](#base-distances) `euclidean_cost`,
+`squared_euclidean_cost`, `rbf_cost` (in `torchwarp` and
+`torchwarp.functional`), [`torchwarp.paths`](#torchwarppaths) and
+[`torchwarp.plot`](#torchwarpplot).
 
 ---
 
-## uDTW
+## Modules
 
-For time step i of X and j of Y, with uncertainties $\sigma_i$ and
-$\sigma_j'$, uDTW uses the variance
+### `UDTW`
+
+```python
+torchwarp.UDTW(gamma=1.0, beta=1.0, normalize=False, bandwidth=None, *,
+               method="gemm", backend="auto")
+```
+
+`torch.nn.Module` computing the uDTW distance and penalty of each pair
+of sequences. For time step i of X and j of Y, with uncertainties
+$\sigma_i$ and $\sigma_j'$, uDTW uses the variance
 $\Sigma_{ij} = \frac{1}{2} (\sigma_i^2 + \sigma_j'^2)$ (Eq. 8), the cost
 $\lVert x_i - y_j \rVert^2 / \Sigma_{ij}$ and the penalty $\beta \log \Sigma_{ij}$
 (Eq. 16). The distance is the soft minimum of the path costs (Eq. 2);
 the penalty $\Omega$ is the sum of the penalty along the
 paths, weighted by the same soft selection (Eq. 3).
 
-### `UDTW`
-
-```python
-torchwarp.UDTW(use_cuda=False, gamma=1.0, normalize=False, bandwidth=None, *,
-               backend="auto", method="gemm")
-```
-
-`torch.nn.Module` computing the uDTW distance and penalty of each pair
-of sequences. `torchwarp.uDTW` is the same class, under the name used by
-the official code.
-
 | argument | type | default | description |
 | --- | --- | --- | --- |
-| `use_cuda` | bool | `False` | Ignored; kept for compatibility with the official API. The device of the inputs decides where the computation runs. |
 | `gamma` | float | `1.0` | Soft minimum temperature $\gamma > 0$. |
+| `beta` | float | `1.0` | Penalty weight $\beta \geq 0$. |
 | `normalize` | bool | `False` | If `True`, return $d(X, Y) - \frac{1}{2} \left[ d(X, X) + d(Y, Y) \right]$ for both the distance and the penalty. |
 | `bandwidth` | float or None | `None` | Sakoe-Chiba band: only cells with $\lvert i - j \rvert \leq$ `bandwidth` are used. `None` or `0` uses all cells. |
-| `backend` | str | `"auto"` | `"auto"`, `"cuda"` or `"torch"`. |
 | `method` | str | `"gemm"` | `"gemm"` builds the cost inside the fused kernel without storing `[B, N, M]` matrices; `"diff"` builds the matrices with `pairwise_matrices` first. Same result. |
+| `backend` | str | `"auto"` | `"auto"`, `"cuda"` or `"torch"`. |
 
-**forward**`(X, Y, Sigma_X, Sigma_Y, beta=1.0)`
+**forward**`(X, Y, sigma_x, sigma_y)`
 
 | argument | shape | description |
 | --- | --- | --- |
 | `X` | `[B, N, D]` | First batch of sequences. |
 | `Y` | `[B, M, D]` | Second batch of sequences. |
-| `Sigma_X` | `[B, N, 1]` | Uncertainty $\sigma$ (a standard deviation, $> 0$) of each time step of `X`. |
-| `Sigma_Y` | `[B, M, 1]` | Uncertainty $\sigma'$ of each time step of `Y`. |
-| `beta` | float | Penalty weight $\beta \geq 0$. |
+| `sigma_x` | `[B, N, 1]` | Uncertainty $\sigma$ (a standard deviation, $> 0$) of each time step of `X`. |
+| `sigma_y` | `[B, M, 1]` | Uncertainty $\sigma'$ of each time step of `Y`. |
 
 **Returns** `UDTWOutput(distance, penalty)`, a named tuple of two `[B]`
 tensors: the uDTW distance and the penalty $\beta\Omega$ of each pair
@@ -86,90 +88,55 @@ $\mathrm{bandwidth} < 0$, or a band so narrow that no path reaches the last cell
 `TypeError` for non-floating-point inputs.
 
 ```python
-udtw = torchwarp.UDTW(gamma=1.0, normalize=True)
-d, omega = udtw(X, Y, sx, sy, beta=1.0)
+udtw = torchwarp.UDTW(gamma=1.0, beta=1.0, normalize=True)
+d, omega = udtw(X, Y, sx, sy)
 loss = (d + omega).mean()
 ```
 
-### `udtw_from_features`
+### `SoftDTW`
 
 ```python
-torchwarp.udtw_from_features(X, Y, sigma_x, sigma_y, *, beta=1.0, gamma=1.0,
-                             bandwidth=None, eps=1e-8, backend="auto")
+torchwarp.SoftDTW(gamma=1.0, normalize=False, bandwidth=None, dist_func=None, *,
+                  backend="auto")
 ```
 
-Functional form of `UDTW` (without `normalize`). Arguments as in
-`UDTW.forward` (`sigma_x`, `sigma_y` are `Sigma_X`, `Sigma_Y` there);
-`eps` is the lower bound applied to $\Sigma$.
+`torch.nn.Module` computing soft-DTW of each pair of sequences.
 
-**Returns** `UDTWOutput(distance [B], penalty [B])`.
+| argument | type | default | description |
+| --- | --- | --- | --- |
+| `gamma` | float | `1.0` | Soft minimum temperature $\gamma > 0$. |
+| `normalize` | bool | `False` | If `True`, return the soft-DTW divergence $d(X, Y) - \frac{1}{2} \left[ d(X, X) + d(Y, Y) \right]$. |
+| `bandwidth` | float or None | `None` | Sakoe-Chiba band, as in `UDTW`. |
+| `dist_func` | callable or None | `None` | Function `(X, Y)` returning the cost `[B, N, M]`. `None`: squared Euclidean distance; the CUDA kernel computes it without storing `[B, N, M]`. |
+| `backend` | str | `"auto"` | `"auto"`, `"cuda"` or `"torch"`. |
 
-### `udtw_from_cost`
+**forward**`(X, Y)` with `X [B, N, D]`, `Y [B, M, D]`. **Returns**
+`[B]`. A band so narrow that no path reaches the last cell raises
+`ValueError`.
 
 ```python
-torchwarp.udtw_from_cost(cost, penalty, *, gamma=1.0, bandwidth=None, backend="auto")
+sdtw = torchwarp.SoftDTW(gamma=0.1, normalize=True)
+loss = sdtw(X, Y).mean()
 ```
-
-Runs the uDTW dynamic program on matrices you build yourself, for
-example with another base distance or another variance model (such as
-the jointly generated variance of Eq. 9).
-
-| argument | shape | description |
-| --- | --- | --- |
-| `cost` | `[B, N, M]` | Uncertainty-weighted cost of each cell, for example $d(x_i, y_j) / \Sigma_{ij}$. |
-| `penalty` | `[B, N, M]` | Penalty of each cell, for example $\beta \log \Sigma_{ij}$. |
-| `gamma` | float | Soft minimum temperature $\gamma > 0$. |
-| `bandwidth` | float or None | Sakoe-Chiba band, as in `UDTW`. |
-
-**Returns** `UDTWOutput(distance [B], penalty [B])`: the soft minimum of the path
-costs, and the penalty summed along the paths with the same soft
-selection.
-
-```python
-cost, penalty, Sigma = torchwarp.pairwise_matrices(X, Y, sx, sy, beta=1.0)
-cos = torch.nn.functional.cosine_similarity(X.unsqueeze(2), Y.unsqueeze(1), dim=-1)
-d, omega = torchwarp.udtw_from_cost((1 - cos) / Sigma, penalty, gamma=1.0)
-```
-
-### `pairwise_matrices`
-
-```python
-torchwarp.pairwise_matrices(X, Y, Sigma_X, Sigma_Y, beta=1.0, eps=1e-8, *,
-                            method="gemm")
-```
-
-Builds the default uDTW matrices.
-
-**Returns** `(cost, penalty, Sigma)`, each `[B, N, M]`:
-$\mathrm{cost} _{ij} = \lVert x _i - y _j \rVert^2 / \Sigma _{ij}$,
-$\mathrm{penalty} _{ij} = \beta \log \Sigma _{ij}$,
-$\Sigma _{ij} = \max\left(\frac{1}{2} (\sigma_i^2 + \sigma_j'^2), \mathrm{eps}\right)$.
-`method` is `"gemm"` ($\lVert x \rVert^2 + \lVert y \rVert^2 - 2\, x \cdot y$ with one batched
-matrix product, low memory) or `"diff"` (forms $x - y$ explicitly).
-
----
-
-## JEANIE
-
-JEANIE aligns a query seen from K simulated viewpoints with a support
-sequence. A path moves through cells (t, u, k): t and u move as in DTW
-and the viewpoint k may change by at most $\iota$ (`max_shift`) per step. The
-path may start and end at any viewpoint. The distance is the soft
-minimum of the path distances (Algorithm 1).
 
 ### `JEANIE`
 
 ```python
-torchwarp.JEANIE(*, gamma=0.1, max_shift=1, metric="euclidean", backend="auto")
+torchwarp.JEANIE(gamma=0.1, max_shift=1, metric="euclidean", *, backend="auto")
 ```
 
 `torch.nn.Module` computing the JEANIE distance of each query and support
-pair from their features.
+pair from their features. JEANIE aligns a query seen from K simulated
+viewpoints with a support sequence. A path moves through cells
+(t, u, k): t and u move as in DTW and the viewpoint k may change by at
+most $\iota$ (`max_shift`) per step. The path may start and end at any
+viewpoint. The distance is the soft minimum of the path distances
+(Algorithm 1).
 
 | argument | type | default | description |
 | --- | --- | --- | --- |
 | `gamma` | float | `0.1` | Soft minimum temperature $\gamma > 0$. |
-| `max_shift` | int or (int, int) | `1` | $\iota$-max shift. An int for one viewpoint axis; a pair `(azimuth, altitude)` for two axes. Values above K - 1 behave like K - 1. |
+| `max_shift` | int or (int, int) | `1` | $\iota$-max shift. An int applies to every viewpoint axis; a pair `(azimuth, altitude)` sets the two axes of a two-axis query separately. Values above K - 1 behave like K - 1. |
 | `metric` | str | `"euclidean"` | Base distance between blocks: `"euclidean"`, `"sqeuclidean"` or `"rbf"` (see `rbf_cost`, $\sigma = 0.5$). |
 | `backend` | str | `"auto"` | `"auto"`, `"cuda"` or `"torch"`. |
 
@@ -190,177 +157,171 @@ dist = jeanie(query, support)
 dist, R = jeanie(query, support, return_accumulator=True)
 ```
 
-### `jeanie_1d_from_features`
+### `FVM`
 
 ```python
-torchwarp.jeanie_1d_from_features(query, support, *, gamma=0.1, max_shift=1,
-                                  metric="euclidean", return_accumulator=False,
-                                  backend="auto")
+torchwarp.FVM(gamma=0.1, metric="euclidean", *, backend="auto")
 ```
 
-JEANIE with one viewpoint axis, from features.
+`torch.nn.Module` computing Free Viewpoint Matching: at every cell
+(t, u), the soft minimum of the base distance over the viewpoints, then
+soft-DTW on the result (JEANIE Eq. 13). With one query viewpoint axis it
+equals JEANIE with `max_shift = K - 1`. Arguments as in `JEANIE`
+(without `max_shift`).
 
-| argument | shape |
-| --- | --- |
-| `query` | `[K, T, D]` or `[B, K, T, D]` |
-| `support` | `[U, D]` or `[B, U, D]` |
-
-**Returns** a scalar (unbatched) or `[B]`; with
-`return_accumulator=True`, `(distance, R)` with R `[B, K, T, U]`.
-
-### `jeanie_1d_from_cost`
-
-```python
-torchwarp.jeanie_1d_from_cost(cost, gamma=0.1, max_shift=1,
-                              return_accumulator=False, *, backend="auto")
-```
-
-JEANIE with one viewpoint axis, on a precomputed base distance tensor.
+**forward**`(query, support)`
 
 | argument | shape | description |
 | --- | --- | --- |
-| `cost` | `[K, T, U]` or `[B, K, T, U]` | Base distance between query block t at viewpoint k and support block u. |
+| `query` | `[B, K, T, D]`, or more viewpoint axes `[B, K1, K2, T, D]` | Query blocks for each simulated viewpoint. |
+| `support` | `[B, U, D]`, or `[B, K', U, D]` with its own viewpoints | Support blocks. All query and support viewpoint pairs are reduced. |
 
-**Returns** a scalar or `[B]`; with `return_accumulator=True`,
+**Returns** `distance [B]`.
+
+```python
+fvm = torchwarp.FVM(gamma=0.1)
+d_fvm = fvm(query, support)
+```
+
+---
+
+## `torchwarp.functional`
+
+Each function below has the same arguments as the module of the same
+name, with the hyperparameters as keyword-only arguments.
+
+### `TF.udtw`
+
+```python
+TF.udtw(X, Y, sigma_x, sigma_y, *, beta=1.0, gamma=1.0, normalize=False,
+        bandwidth=None, method="gemm", eps=1e-8, backend="auto")
+```
+
+Functional form of [`UDTW`](#udtw); `eps` is the lower bound applied to
+$\Sigma$. **Returns** `UDTWOutput(distance [B], penalty [B])`.
+
+### `TF.udtw_from_cost`
+
+```python
+TF.udtw_from_cost(cost, penalty, *, gamma=1.0, bandwidth=None, backend="auto")
+```
+
+Runs the uDTW dynamic program on matrices you build yourself, for
+example with another base distance or another variance model (such as
+the jointly generated variance of Eq. 9).
+
+| argument | shape | description |
+| --- | --- | --- |
+| `cost` | `[B, N, M]` | Uncertainty-weighted cost of each cell, for example $d(x_i, y_j) / \Sigma_{ij}$. |
+| `penalty` | `[B, N, M]` | Penalty of each cell, for example $\beta \log \Sigma_{ij}$. |
+| `gamma` | float | Soft minimum temperature $\gamma > 0$. |
+| `bandwidth` | float or None | Sakoe-Chiba band, as in `UDTW`. |
+
+**Returns** `UDTWOutput(distance [B], penalty [B])`: the soft minimum of the path
+costs, and the penalty summed along the paths with the same soft
+selection.
+
+```python
+cost, penalty, Sigma = TF.pairwise_matrices(X, Y, sx, sy, beta=1.0)
+cos = torch.nn.functional.cosine_similarity(X.unsqueeze(2), Y.unsqueeze(1), dim=-1)
+d, omega = TF.udtw_from_cost((1 - cos) / Sigma, penalty, gamma=1.0)
+```
+
+### `TF.pairwise_matrices`
+
+```python
+TF.pairwise_matrices(X, Y, sigma_x, sigma_y, beta=1.0, eps=1e-8, *, method="gemm")
+```
+
+Builds the default uDTW matrices.
+
+**Returns** `(cost, penalty, Sigma)`, each `[B, N, M]`:
+$\mathrm{cost} _{ij} = \lVert x _i - y _j \rVert^2 / \Sigma _{ij}$,
+$\mathrm{penalty} _{ij} = \beta \log \Sigma _{ij}$,
+$\Sigma _{ij} = \max\left(\frac{1}{2} (\sigma_i^2 + \sigma_j'^2), \mathrm{eps}\right)$.
+`method` is `"gemm"` ($\lVert x \rVert^2 + \lVert y \rVert^2 - 2\, x \cdot y$ with one batched
+matrix product, low memory) or `"diff"` (forms $x - y$ explicitly).
+
+### `TF.soft_dtw`
+
+```python
+TF.soft_dtw(X, Y, *, gamma=1.0, normalize=False, bandwidth=None, dist_func=None,
+            backend="auto")
+```
+
+Functional form of [`SoftDTW`](#softdtw). **Returns** `[B]`.
+
+### `TF.soft_dtw_from_cost`
+
+```python
+TF.soft_dtw_from_cost(cost, *, gamma=1.0, bandwidth=None, backend="auto")
+```
+
+soft-DTW of a cost `[B, T, U]`. **Returns** `[B]`.
+
+### `TF.jeanie`
+
+```python
+TF.jeanie(query, support, *, gamma=0.1, max_shift=1, metric="euclidean",
+          return_accumulator=False, backend="auto")
+```
+
+Functional form of [`JEANIE`](#jeanie). **Returns** `distance [B]`, or
+`(distance, R)` with `return_accumulator=True`.
+
+### `TF.jeanie_from_cost`
+
+```python
+TF.jeanie_from_cost(cost, *, gamma=0.1, max_shift=1, return_accumulator=False,
+                    backend="auto")
+```
+
+JEANIE on a precomputed base distance tensor.
+
+| argument | shape | description |
+| --- | --- | --- |
+| `cost` | `[B, K, T, U]` or `[B, K1, K2, T, U]` | Base distance between query block t at viewpoint k and support block u, for example `euclidean_cost(query, support)`. |
+
+**Returns** `distance [B]`; with `return_accumulator=True`,
 `(distance, R)` with R of the same shape as `cost`.
 
-### `jeanie_2d_from_features`
+### `TF.fvm`
 
 ```python
-torchwarp.jeanie_2d_from_features(query, support, *, gamma=0.1, max_shift_az=1,
-                                  max_shift_alt=1, metric="euclidean",
-                                  return_accumulator=False, backend="auto")
+TF.fvm(query, support, *, gamma=0.1, metric="euclidean", backend="auto")
 ```
 
-JEANIE with two viewpoint axes (azimuth and altitude), from features.
-`query` is `[K1, K2, T, D]` or `[B, K1, K2, T, D]`, `support` is
-`[U, D]` or `[B, U, D]`. `max_shift_az` and `max_shift_alt` are the
-$\iota$-max shifts along the two axes.
+Functional form of [`FVM`](#fvm). **Returns** `[B]`.
 
-**Returns** a scalar or `[B]` (and R `[B, K1, K2, T, U]` if requested).
-
-### `jeanie_2d_from_cost`
+### `TF.fvm_from_cost`
 
 ```python
-torchwarp.jeanie_2d_from_cost(cost, gamma=0.1, max_shift_az=1, max_shift_alt=1,
-                              return_accumulator=False, *, backend="auto")
+TF.fvm_from_cost(cost, *, gamma=0.1, backend="auto")
 ```
 
-As `jeanie_2d_from_features`, on a cost `[K1, K2, T, U]` or
-`[B, K1, K2, T, U]`.
-
----
-
-## FVM
-
-Free Viewpoint Matching takes, at every cell (t, u), the soft minimum of
-the base distance over the viewpoints, and runs soft-DTW on the result
-(JEANIE Eq. 13). It equals JEANIE with `max_shift = K - 1`.
-
-### `fvm_query_only_1d`
+FVM on a precomputed cost `[B, K..., T, U]`: every dimension between the
+batch dimension and `[T, U]` is a viewpoint axis reduced by the soft
+minimum, for example `[B, K, T, U]` (query viewpoints),
+`[B, K1, K2, T, U]` (two query axes) or `[B, K, K', T, U]` (query and
+support viewpoints). **Returns** `[B]`.
 
 ```python
-torchwarp.fvm_query_only_1d(cost, gamma=0.1, *, backend="auto")
+D = TF.euclidean_cost(query, support)   # [B, K, T, U]
+d_fvm = TF.fvm_from_cost(D, gamma=0.1)
 ```
 
-FVM over the query viewpoints. `cost` is `[K, T, U]` or `[B, K, T, U]`
-(for example `euclidean_cost(query, support)`).
-**Returns** a scalar or `[B]`.
+### `TF.softmin`
 
 ```python
-D = torchwarp.euclidean_cost(query, support)
-d_fvm = torchwarp.fvm_query_only_1d(D, gamma=0.1)
-```
-
-### `fvm_query_only_2d`
-
-```python
-torchwarp.fvm_query_only_2d(cost, gamma=0.1, *, backend="auto")
-```
-
-FVM over two query viewpoint axes; `cost` is `[K1, K2, T, U]` or
-`[B, K1, K2, T, U]`. **Returns** a scalar or `[B]`.
-
-### `fvm_1d_from_cost`
-
-```python
-torchwarp.fvm_1d_from_cost(cost, gamma=0.1, *, backend="auto")
-```
-
-FVM over query and support viewpoints; `cost` is `[Kq, Ks, T, U]` or
-`[B, Kq, Ks, T, U]`. **Returns** a scalar or `[B]`.
-
-### `fvm_2d_from_cost`
-
-```python
-torchwarp.fvm_2d_from_cost(cost, gamma=0.1, *, backend="auto")
-```
-
-FVM over two query and two support viewpoint axes; `cost` is
-`[Kq1, Kq2, Ks1, Ks2, T, U]` with an optional leading batch dimension.
-**Returns** a scalar or `[B]`.
-
-### `fvm_from_cost`
-
-```python
-torchwarp.fvm_from_cost(cost, gamma=0.1, *, batched=False, backend="auto")
-```
-
-General form: every dimension except the last two (and the first one
-when `batched=True`) is a viewpoint axis reduced by the soft minimum.
-
----
-
-## soft-DTW
-
-### `SoftDTW`
-
-```python
-torchwarp.SoftDTW(use_cuda=False, gamma=1.0, normalize=False, bandwidth=None,
-                  dist_func=None, *, backend="auto")
-```
-
-`torch.nn.Module` computing soft-DTW of each pair of sequences, with the
-arguments of `SoftDTW` in pytorch-softdtw-cuda.
-
-| argument | type | default | description |
-| --- | --- | --- | --- |
-| `use_cuda` | bool | `False` | Ignored; the device of the inputs decides where the computation runs. |
-| `gamma` | float | `1.0` | Soft minimum temperature $\gamma > 0$. |
-| `normalize` | bool | `False` | If `True`, return the soft-DTW divergence $d(X, Y) - \frac{1}{2} \left[ d(X, X) + d(Y, Y) \right]$. |
-| `bandwidth` | float or None | `None` | Sakoe-Chiba band, as in `UDTW`. |
-| `dist_func` | callable or None | `None` | Function `(X, Y)` returning the cost `[B, N, M]`. `None`: squared Euclidean distance; the CUDA kernel computes it without storing `[B, N, M]`. |
-
-**forward**`(X, Y)` with `X [B, N, D]`, `Y [B, M, D]`. **Returns**
-`[B]`. A band so narrow that no path reaches the last cell raises
-`ValueError` (pytorch-softdtw-cuda returns `inf`).
-
-```python
-sdtw = torchwarp.SoftDTW(gamma=0.1, normalize=True)
-loss = sdtw(X, Y).mean()
-```
-
-### `soft_dtw`
-
-```python
-torchwarp.soft_dtw(cost, gamma=0.1, *, backend="auto")
-```
-
-soft-DTW of a cost `[T, U]` (returns a scalar) or `[B, T, U]` (returns
-`[B]`).
-
-### `softmin`
-
-```python
-torchwarp.softmin(x, gamma, dim=None)
+TF.softmin(x, gamma, dim=None)
 ```
 
 $-\gamma \log \sum \exp(-x / \gamma)$ over `dim` (over all elements when `dim=None`).
 
-### `softmin_weights`
+### `TF.softmin_weights`
 
 ```python
-torchwarp.softmin_weights(values, gamma, dim=0)
+TF.softmin_weights(values, gamma, dim=0)
 ```
 
 The weights of the soft minimum, $\mathrm{softmax}(-\mathrm{values} / \gamma)$ over `dim`.
@@ -369,15 +330,15 @@ The weights of the soft minimum, $\mathrm{softmax}(-\mathrm{values} / \gamma)$ o
 
 ## Base distances
 
-All three accept two layouts:
+Available as `torchwarp.<name>` and `TF.<name>`. All three accept two
+layouts:
 
-* JEANIE / FVM: `query [..., K, T, D]` and `support [..., U, D]` (same
-  leading dimensions, or none for `support`) return `[..., K, T, U]`.
+* JEANIE / FVM: `query [B, K, T, D]` and `support [B, U, D]` return
+  `[B, K, T, U]`.
 * Two sequences of the same rank, as for uDTW and soft-DTW:
-  `x [..., N, D]` and `y [..., M, D]` return `[..., N, M]`.
-
-For a support with viewpoints, add or remove the viewpoint axis with
-`unsqueeze` / `squeeze`.
+  `x [B, N, D]` and `y [B, M, D]` return `[B, N, M]`. Leading dimensions
+  broadcast, so `query[:, :, None]` and `support[:, None]` with
+  viewpoints give `[B, K, K', T, U]`.
 
 ### `euclidean_cost`
 
@@ -403,7 +364,7 @@ torchwarp.rbf_cost(query, support, sigma=0.5)
 ```
 
 $\sum_d \left[ 2 - 2 \exp\left(-\sigma (q_d - s_d)^2\right) \right]$. Stores the
-`[..., K, T, U, D]` difference tensor, so it uses more memory than the
+`[B, K, T, U, D]` difference tensor, so it uses more memory than the
 Euclidean distances.
 
 ---
@@ -455,7 +416,7 @@ uDTW paths for `X [B, N, D]`, `Y [B, M, D]`, `sigma_x [B, N, 1]`,
 torchwarp.paths.soft_dtw(cost, *, gamma=0.1)
 ```
 
-soft-DTW paths for a cost matrix `[T, U]` or `[B, T, U]`.
+soft-DTW paths for a cost matrix `[B, T, U]`.
 
 ### `paths.soft_dtw_per_view`
 
@@ -465,7 +426,7 @@ torchwarp.paths.soft_dtw_per_view(query, support, *, gamma=0.1, metric="euclidea
 ```
 
 soft-DTW applied to each query viewpoint separately. `query` is
-`[K, T, D]` or `[B, K, T, D]`, `support` is `[U, D]` or `[B, U, D]`.
+`[B, K, T, D]`, `support` is `[B, U, D]`.
 **Returns** a list of K `Alignment`s with cells `(t, u, k)`.
 
 ### `paths.fvm`
@@ -534,7 +495,7 @@ each starting viewpoint.
 
 | argument | description |
 | --- | --- |
-| `query`, `support` | `[K, T, D]` / `[U, D]`, or with a batch dimension. |
+| `query`, `support` | `[B, K, T, D]` / `[B, U, D]`. |
 | `angles` | One label (degrees) per query viewpoint. |
 | `max_shift` | An int, or a sequence of ints for one JEANIE panel each. |
 | `soft_dtw_gamma`, `fvm_gamma`, `jeanie_gamma` | Per-method $\gamma$ (default `gamma`). |

@@ -25,7 +25,7 @@ import torch
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-import torchwarp
+import torchwarp.functional as TF
 from torchwarp import paths, plot
 
 import nwucla_fewshot as nw
@@ -74,13 +74,13 @@ class Encoded:
 def nearest_support(data, q, candidates, gamma, max_shift):
     query = data.query(q)
     supports = torch.stack([data.support(s) for s in candidates])
-    d = torchwarp.jeanie_1d_from_features(query.expand(len(candidates), -1, -1, -1), supports,
-                                          gamma=gamma, max_shift=max_shift)
+    d = TF.jeanie(query.expand(len(candidates), -1, -1, -1), supports, gamma=gamma,
+                  max_shift=max_shift)
     return candidates[int(d.argmin())]
 
 
 def draw(data, q, s, path, gamma, shifts):
-    query, support = data.query(q), data.support(s)
+    query, support = data.query(q)[None], data.support(s)[None]   # [1, K, T, E], [1, U, E]
     fig = plot.viewpoint_figure(query, support, data.cfg["angles_deg"], gamma=gamma,
                                 max_shift=shifts, query_poses=data.query_poses(q),
                                 support_poses=data.support_poses(s), bones=BONES, pose_step=3)
@@ -93,7 +93,7 @@ def draw(data, q, s, path, gamma, shifts):
     row["d_fvm"] = float(paths.fvm(query, support, gamma=gamma).distance[0])
     for m in shifts:
         row["d_jeanie_shift{}".format(m)] = float(
-            torchwarp.jeanie_1d_from_features(query, support, gamma=gamma, max_shift=m))
+            TF.jeanie(query, support, gamma=gamma, max_shift=m)[0])
     return row
 
 

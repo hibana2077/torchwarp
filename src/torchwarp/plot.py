@@ -288,7 +288,7 @@ def viewpoint_figure(query, support, angles, *, gamma=0.1, max_shift=1, metric="
     """JEANIE Fig. 7: soft-DTW (view-wise), FVM and JEANIE (the optimal path for
     each possible starting position).
 
-    query [B, K, T, D] (or [K, T, D]), support [B, U, D] (or [U, D]).
+    query [B, K, T, D], support [B, U, D].
     ``max_shift``: an int, or a sequence of ints for one JEANIE panel each.
     ``axes``: existing 3-D axes to draw into, one per panel (e.g. one row of
     a larger figure); ``titles``: one caption per panel.

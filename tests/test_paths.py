@@ -4,6 +4,7 @@ import pytest
 import torch
 
 import torchwarp
+import torchwarp.functional as TF
 from torchwarp import paths
 
 DEVICES = ["cpu"] + (["cuda"] if torch.cuda.is_available() else [])
@@ -48,7 +49,7 @@ def test_udtw_alignment(device):
     sx = torch.rand(2, 7, 1, dtype=torch.float64, device=device) + 0.5
     sy = torch.rand(2, 9, 1, dtype=torch.float64, device=device) + 0.5
     a = paths.udtw(X, Y, sx, sy, gamma=0.1, beta=1.0)
-    d, omega = torchwarp.UDTW(gamma=0.1)(X, Y, sx, sy, beta=1.0)
+    d, omega = torchwarp.UDTW(gamma=0.1, beta=1.0)(X, Y, sx, sy)
     assert torch.allclose(a.distance, d) and torch.allclose(a.Omega, omega)
     assert a.path_matrix.shape == a.Sigma.shape == (2, 7, 9)
     for p in a.optimal_path:
@@ -64,7 +65,7 @@ def test_jeanie_and_fvm_paths(device, max_shift):
     cost = torchwarp.euclidean_cost(q, s)
 
     j = paths.jeanie(q, s, gamma=0.1, max_shift=max_shift)
-    assert torch.allclose(j.distance, torchwarp.jeanie_1d_from_cost(cost, 0.1, max_shift))
+    assert torch.allclose(j.distance, TF.jeanie_from_cost(cost, gamma=0.1, max_shift=max_shift))
     assert j.path_matrix.shape == (2, 5, 8, 10)
     for p in j.optimal_path:
         check_monotone(p, 8, 10)
@@ -76,7 +77,7 @@ def test_jeanie_and_fvm_paths(device, max_shift):
     assert torch.all(js.distance >= j.distance - 1e-9)
 
     f = paths.fvm(q, s, gamma=0.1)
-    assert torch.allclose(f.distance, torchwarp.fvm_query_only_1d(cost, 0.1))
+    assert torch.allclose(f.distance, TF.fvm_from_cost(cost, gamma=0.1))
     for p in f.optimal_path:
         check_monotone(p, 8, 10)
 
@@ -84,6 +85,15 @@ def test_jeanie_and_fvm_paths(device, max_shift):
     assert len(views) == 5
     for k, v in enumerate(views):
         assert all(c[2] == k for p in v.optimal_path for c in p)
+
+
+def test_unbatched_inputs_raise():
+    with pytest.raises(ValueError):
+        paths.soft_dtw(torch.rand(4, 5))
+    with pytest.raises(ValueError):
+        paths.jeanie(torch.randn(5, 7, 4), torch.randn(9, 4))
+    with pytest.raises(ValueError):
+        paths.fvm(torch.randn(5, 7, 4), torch.randn(9, 4))
 
 
 def all_paths(K, T, U, max_shift):
@@ -136,7 +146,7 @@ def test_plot_figures():
     assert len(fig.axes) >= 5
     plt.close(fig)
 
-    q, s = torch.randn(5, 7, 4), torch.randn(9, 4)
+    q, s = torch.randn(1, 5, 7, 4), torch.randn(1, 9, 4)
     poses_q, poses_s = torch.randn(5, 7, 3, 2), torch.randn(9, 3, 2)
     fig = plot.viewpoint_figure(q, s, [-60, -30, 0, 30, 60], query_poses=poses_q,
                                 support_poses=poses_s, bones=[(0, 1), (1, 2)], pose_step=2)
@@ -167,7 +177,7 @@ def test_alignment_plot():
     assert len(ax.lines) == len(a.optimal_path[0]) + 2
     plt.close(fig)
 
-    j = paths.jeanie(torch.randn(5, 7, 4), torch.randn(9, 4), max_shift=1)
+    j = paths.jeanie(torch.randn(1, 5, 7, 4), torch.randn(1, 9, 4), max_shift=1)
     ax = j.plot("path_3d")
     assert ax.name == "3d"
     plt.close(ax.figure)

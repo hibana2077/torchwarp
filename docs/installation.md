@@ -86,8 +86,13 @@ pip install pytest scipy
 python -m pytest
 ```
 
-The tests compare torchwarp with the official uDTW and JEANIE code
-(values and gradients, float64), and check both backends on the CPU and,
-if available, on the GPU. The official code is downloaded once from
-github.com/LeiWangR at a pinned commit; without network access those
-tests are skipped.
+The tests compare torchwarp with the outputs of the official uDTW and
+JEANIE code (values and gradients, float64), stored in
+`tests/golden/reference.pt`, and check both backends on the CPU and, if
+available, on the GPU. They do not need the official code or network
+access. After adding or changing a test case, regenerate the stored
+outputs (downloads the official code once):
+
+```bash
+python tests/golden/generate.py
+```

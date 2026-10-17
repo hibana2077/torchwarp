@@ -268,7 +268,8 @@ def _first_order_dp(s1, s2, gamma, with_R):
 
     if with_R:
         return lambda c, go, gR: _vjp_of(f, (c,), (go, gR))
-    return lambda c, go: _vjp_of(lambda c: f(c)[0], (c,), (go,))
+    # one output and one cotangent: both as 1-tuples, so their pytrees match
+    return lambda c, go: _vjp_of(lambda c: (f(c)[0],), (c,), (go,))
 
 
 def _first_order_features(s1, s2, gamma, metric, with_R):
@@ -278,7 +279,7 @@ def _first_order_features(s1, s2, gamma, metric, with_R):
 
     if with_R:
         return lambda q, s, go, gR: tuple(_vjp_of(f, (q, s), (go, gR)))
-    return lambda q, s, go: tuple(_vjp_of(lambda q, s: f(q, s)[0], (q, s), (go,)))
+    return lambda q, s, go: tuple(_vjp_of(lambda q, s: (f(q, s)[0],), (q, s), (go,)))
 
 
 class DP(torch.autograd.Function):

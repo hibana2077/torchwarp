@@ -1,8 +1,7 @@
 """Fast JEANIE temporal-viewpoint alignment: functional interface.
 
 Implements JEANIE (Wang et al., IJCV 2024; Algorithm 1 and its two-axis
-extension). Every entry point accepts either a
-single cost tensor or a batch with one extra leading dimension. The dynamic
+extension). Every entry point takes a batch (leading dimension B). The dynamic
 program runs as a fused CUDA/HIP kernel or as a vectorised anti-diagonal
 PyTorch loop, wrapped as PyTorch custom ops (see ``_ops``): analytic
 first-order backward, exact higher-order gradients, a differentiable
@@ -107,125 +106,70 @@ def _jeanie_dp_features(query, support, gamma=0.1, max_shift_1=1, max_shift_2=1,
     return out, (R if return_accumulator else None)
 
 
-def jeanie_1d_from_features(query, support, *, gamma=0.1, max_shift=1,
-                            metric="euclidean", return_accumulator=False, backend="auto"):
-    """JEANIE (one viewpoint axis) from features.
+def _max_shifts(max_shift, axes):
+    """iota-max shift per viewpoint axis: an int applies to every axis."""
+    if isinstance(max_shift, int):
+        shifts = (max_shift,) * axes
+    else:
+        shifts = tuple(int(m) for m in max_shift)
+        if len(shifts) != axes:
+            raise ValueError("max_shift must be an int or a tuple of {} ints for {} viewpoint "
+                             "axis/axes".format(axes, axes))
+    if min(shifts) < 0:
+        raise ValueError("max_shift must be >= 0")
+    return shifts + (0,) * (2 - axes)
+
+
+def jeanie(query, support, *, gamma=0.1, max_shift=1, metric="euclidean",
+           return_accumulator=False, backend="auto"):
+    """JEANIE between viewpoint-augmented queries and supports.
 
     Args:
-        query: [K, T, D] or batched [B, K, T, D].
-        support: [U, D] or batched [B, U, D].
-        metric: "euclidean" (paper default), "sqeuclidean" or "rbf".
-    """
-    single = query.ndim == 3
-    if single:
-        query, support = query.unsqueeze(0), support.unsqueeze(0)
-    if query.ndim != 4 or support.ndim != 3:
-        raise ValueError("query must be [K,T,D] / [B,K,T,D] and support [U,D] / [B,U,D]")
-    out, R = _jeanie_dp_features(query.unsqueeze(2), support, gamma, max_shift, 0,
-                                metric, backend, return_accumulator)
-    if not return_accumulator:
-        return out[0] if single else out
-    R = R[:, :, 0]
-    if single:
-        out, R = out[0], R[0]
-    return (out, R) if return_accumulator else out
-
-
-def jeanie_2d_from_features(query, support, *, gamma=0.1, max_shift_az=1, max_shift_alt=1,
-                            metric="euclidean", return_accumulator=False, backend="auto"):
-    """JEANIE on a two-axis viewpoint grid from features.
-
-    Args:
-        query: [K1, K2, T, D] or batched [B, K1, K2, T, D].
-        support: [U, D] or batched [B, U, D].
-    """
-    single = query.ndim == 4
-    if single:
-        query, support = query.unsqueeze(0), support.unsqueeze(0)
-    if query.ndim != 5 or support.ndim != 3:
-        raise ValueError("query must be [K1,K2,T,D] / [B,K1,K2,T,D] and support [U,D] / [B,U,D]")
-    out, R = _jeanie_dp_features(query, support, gamma, max_shift_az, max_shift_alt,
-                                metric, backend, return_accumulator)
-    if not return_accumulator:
-        return out[0] if single else out
-    if single:
-        out, R = out[0], R[0]
-    return (out, R) if return_accumulator else out
-
-
-def _batchify(cost, unbatched_ndim):
-    if cost.ndim == unbatched_ndim:
-        return cost.unsqueeze(0), True
-    if cost.ndim == unbatched_ndim + 1:
-        return cost, False
-    raise ValueError(
-        "cost must have {} dims (or {} with a leading batch dim)".format(
-            unbatched_ndim, unbatched_ndim + 1
-        )
-    )
-
-
-def jeanie_1d_from_cost(
-    cost: torch.Tensor,
-    gamma: float = 0.1,
-    max_shift: int = 1,
-    return_accumulator: bool = False,
-    *,
-    backend: str = "auto",
-):
-    """JEANIE for one viewpoint axis (Algorithm 1).
-
-    Args:
-        cost: [K, T, U] or batched [B, K, T, U].
-        gamma: Positive soft-min temperature.
-        max_shift: Viewpoint smoothness (iota-max shift).
-        return_accumulator: Also return the (differentiable) DP tensor.
-        backend: "auto", "cuda" or "torch".
+        query: [B, K, T, D] (one viewpoint axis) or [B, K1, K2, T, D] (two
+            axes) temporal blocks.
+        support: [B, U, D] temporal blocks.
+        gamma: SoftMin temperature (> 0).
+        max_shift: iota-max shift. An int applies to every viewpoint axis;
+            a pair ``(azimuth, altitude)`` sets the two axes separately.
+        metric: Base distance: "euclidean" (default), "sqeuclidean" or "rbf".
+        return_accumulator: Also return the differentiable DP tensor
+            [B, K, T, U] / [B, K1, K2, T, U].
+        backend: "auto" (CUDA kernel when possible), "cuda" or "torch".
 
     Returns:
-        Distance (scalar, or [B]), and optionally the accumulator.
+        distance [B] (and the accumulator if requested).
     """
-    if not cost.is_floating_point():
-        raise TypeError("cost must be a floating-point tensor")
-    if max_shift < 0:
-        raise ValueError("max_shift must be >= 0")
-    c, single = _batchify(cost, 3)
-    out, R = _jeanie_dp(c[:, :, None], gamma, max_shift, 0, backend, return_accumulator)
+    if query.ndim not in (4, 5) or support.ndim != 3:
+        raise ValueError("query must be [B,K,T,D] or [B,K1,K2,T,D] and support [B,U,D]")
+    one_axis = query.ndim == 4
+    s1, s2 = _max_shifts(max_shift, 1 if one_axis else 2)
+    out, R = _jeanie_dp_features(query.unsqueeze(2) if one_axis else query, support, gamma,
+                                s1, s2, metric, backend, return_accumulator)
     if not return_accumulator:
-        return out[0] if single else out
-    R = R[:, :, 0]
-    if single:
-        out, R = out[0], R[0]
-    return (out, R) if return_accumulator else out
+        return out
+    return out, (R[:, :, 0] if one_axis else R)
 
 
-def jeanie_2d_from_cost(
-    cost: torch.Tensor,
-    gamma: float = 0.1,
-    max_shift_az: int = 1,
-    max_shift_alt: int = 1,
-    return_accumulator: bool = False,
-    *,
-    backend: str = "auto",
-):
-    """JEANIE on a two-axis viewpoint grid.
+def jeanie_from_cost(cost, *, gamma=0.1, max_shift=1, return_accumulator=False,
+                     backend="auto"):
+    """JEANIE on a precomputed cost tensor.
 
     Args:
-        cost: [K1, K2, T, U] or batched [B, K1, K2, T, U].
-        gamma: Positive soft-min temperature.
-        max_shift_az: Maximum predecessor shift on viewpoint axis 1.
-        max_shift_alt: Maximum predecessor shift on viewpoint axis 2.
-        return_accumulator: Also return the (differentiable) DP tensor.
-        backend: "auto", "cuda" or "torch".
+        cost: [B, K, T, U] (one viewpoint axis) or [B, K1, K2, T, U] (two
+            axes), e.g. from ``euclidean_cost``.
+        gamma, max_shift, return_accumulator, backend: as in ``jeanie``.
+
+    Returns:
+        distance [B] (and the accumulator if requested).
     """
     if not cost.is_floating_point():
         raise TypeError("cost must be a floating-point tensor")
-    if max_shift_az < 0 or max_shift_alt < 0:
-        raise ValueError("max shifts must be >= 0")
-    c, single = _batchify(cost, 4)
-    out, R = _jeanie_dp(c, gamma, max_shift_az, max_shift_alt, backend, return_accumulator)
+    if cost.ndim not in (4, 5):
+        raise ValueError("cost must be [B,K,T,U] or [B,K1,K2,T,U]")
+    one_axis = cost.ndim == 4
+    s1, s2 = _max_shifts(max_shift, 1 if one_axis else 2)
+    out, R = _jeanie_dp(cost.unsqueeze(2) if one_axis else cost, gamma, s1, s2, backend,
+                        return_accumulator)
     if not return_accumulator:
-        return out[0] if single else out
-    if single:
-        out, R = out[0], R[0]
-    return (out, R) if return_accumulator else out
+        return out
+    return out, (R[:, :, 0] if one_axis else R)

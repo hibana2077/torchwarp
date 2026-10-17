@@ -23,11 +23,21 @@ import ecg5000_forecast as E
 WARMUP, STEPS = 3, 30
 
 
-def step_time(udtw_cls, cfg, train, device):
+def official_criterion(cfg):
+    """The official uDTW module; it takes beta in forward."""
+    module = load_reference("udtw").uDTW(gamma=cfg["gamma"], normalize=cfg["normalize"])
+    return lambda *xs: module(*xs, beta=cfg["beta"])
+
+
+def torchwarp_criterion(cfg):
+    return UDTW(gamma=cfg["gamma"], beta=cfg["beta"], normalize=cfg["normalize"])
+
+
+def step_time(make_criterion, cfg, train, device):
     torch.manual_seed(42)
     f, sigma = E.make_models(cfg)
     f, sigma = f.to(device), sigma.to(device)
-    crit = udtw_cls(gamma=cfg["gamma"], normalize=cfg["normalize"])
+    crit = make_criterion(cfg)
     opt = torch.optim.Adam(list(f.parameters()) + list(sigma.parameters()), lr=cfg["lr"])
     x_all, y_all = train[:, :cfg["input_len"]].to(device), train[:, cfg["input_len"]:].to(device)
     times = []
@@ -39,7 +49,7 @@ def step_time(udtw_cls, cfg, train, device):
         t0 = time.perf_counter()
         pred = f(x)
         d, p = crit(pred.unsqueeze(-1), y.unsqueeze(-1),
-                    sigma(pred).unsqueeze(-1), sigma(y).unsqueeze(-1), beta=cfg["beta"])
+                    sigma(pred).unsqueeze(-1), sigma(y).unsqueeze(-1))
         loss = (d + p).mean()
         opt.zero_grad(set_to_none=True)
         loss.backward()
@@ -57,12 +67,11 @@ def main():
     torch.set_num_threads(args.threads)
     cfg = E.config("default", "udtw")
     train = E.load_split("TRAIN")
-    official = load_reference("udtw").uDTW
     devices = ["cpu"] + (["cuda"] if torch.cuda.is_available() else [])
     print("uDTW (ECG5000), ms per training step, batch {}".format(cfg["batch_size"]))
     for device in devices:
-        ref = step_time(official, cfg, train, device)
-        tw = step_time(UDTW, cfg, train, device)
+        ref = step_time(official_criterion, cfg, train, device)
+        tw = step_time(torchwarp_criterion, cfg, train, device)
         print("{:4s}  official {:9.2f}  torchwarp {:8.2f}  speed-up {:6.1f}x".format(
             device, ref, tw, ref / tw), flush=True)
 

@@ -22,8 +22,8 @@ from typing import List, Optional, Tuple
 import numpy as np
 import torch
 
-from . import sdtw as _sdtw
-from .jeanie import euclidean_cost, fvm_query_only_1d, jeanie_1d_from_cost, squared_euclidean_cost
+from .jeanie import euclidean_cost, fvm_from_cost, jeanie_from_cost, squared_euclidean_cost
+from .sdtw import soft_dtw_from_cost
 from .udtw import pairwise_matrices, udtw_from_cost
 
 __all__ = ["Alignment", "soft_dtw", "soft_dtw_per_view", "udtw", "fvm", "jeanie", "optimal_path"]
@@ -127,10 +127,6 @@ def optimal_path(cost, *, max_shift=0, start_view=None):
     return [_optimal_3d(c, max_shift, start_view) for c in cost]
 
 
-def _batched(x, ndim):
-    return x.unsqueeze(0) if x.ndim == ndim else x
-
-
 def _base_distance(query, support, metric):
     if metric == "euclidean":
         return euclidean_cost(query, support)
@@ -140,19 +136,18 @@ def _base_distance(query, support, metric):
 
 
 def soft_dtw(cost, *, gamma=0.1):
-    """soft-DTW paths for a cost matrix [B, T, U] (or [T, U])."""
-    cost = _batched(cost, 2)
-    d, pm = _value_and_grad(lambda x: _sdtw.soft_dtw(x, gamma), cost)
+    """soft-DTW paths for a cost matrix [B, T, U]."""
+    d, pm = _value_and_grad(lambda x: soft_dtw_from_cost(x, gamma=gamma), cost)
     return Alignment(d, pm, optimal_path(cost), cost)
 
 
 def soft_dtw_per_view(query, support, *, gamma=0.1, metric="euclidean", angles=None):
     """soft-DTW (view-wise): each viewpoint of the query aligned separately.
 
-    query [B, K, T, d] (or [K, T, d]), support [B, U, d] (or [U, d]).
+    query [B, K, T, d], support [B, U, d].
     Returns a list of K Alignments; path cells are (t, u, k).
     """
-    D = _base_distance(_batched(query, 3), _batched(support, 2), metric)
+    D = _base_distance(query, support, metric)
     out = []
     for k in range(D.shape[1]):
         a = soft_dtw(D[:, k], gamma=gamma)
@@ -181,8 +176,8 @@ def fvm(query, support, *, gamma=0.1, metric="euclidean", angles=None):
 
     At each step the viewpoint is free (JEANIE Eq. 13).
     """
-    D = _base_distance(_batched(query, 3), _batched(support, 2), metric)
-    d, pm = _value_and_grad(lambda x: fvm_query_only_1d(x, gamma), D)
+    D = _base_distance(query, support, metric)
+    d, pm = _value_and_grad(lambda x: fvm_from_cost(x, gamma=gamma), D)
     return Alignment(d, pm, optimal_path(D, max_shift=D.shape[1]), D, angles=angles)
 
 
@@ -194,13 +189,13 @@ def jeanie(query, support, *, gamma=0.1, max_shift=1, metric="euclidean", angles
     start at that viewpoint index (JEANIE Fig. 7 shows the optimal path for
     each possible starting position).
     """
-    D = _base_distance(_batched(query, 3), _batched(support, 2), metric)
+    D = _base_distance(query, support, metric)
     Ds = D
     if start_view is not None:
         block = torch.zeros_like(D)
         block[:, :, 0, 0] = 1e4
         block[:, start_view, 0, 0] = 0
         Ds = D + block
-    d, pm = _value_and_grad(lambda x: jeanie_1d_from_cost(x, gamma, max_shift), Ds)
+    d, pm = _value_and_grad(lambda x: jeanie_from_cost(x, gamma=gamma, max_shift=max_shift), Ds)
     return Alignment(d, pm, optimal_path(D, max_shift=max_shift, start_view=start_view), D,
                      angles=angles)

@@ -31,11 +31,16 @@ CUDA acceleration needs a CUDA-enabled PyTorch build and a CUDA toolkit (`nvcc`)
 
 ## Example
 
+Like `torch.nn`, every method is a module (`torchwarp.UDTW`,
+`torchwarp.SoftDTW`, `torchwarp.JEANIE`, `torchwarp.FVM`) with a matching
+function in `torchwarp.functional`. All inputs have a leading batch
+dimension `B`.
+
 ### uDTW
 
 ```python
 import torch
-from torchwarp import UDTW
+import torchwarp
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -47,8 +52,8 @@ Y = torch.randn(4, 40, 8, device=device)
 sigma_x = torch.rand(4, 30, 1, device=device) + 0.5
 sigma_y = torch.rand(4, 40, 1, device=device) + 0.5
 
-udtw = UDTW(gamma=1.0)
-d, omega = udtw(X, Y, sigma_x, sigma_y, beta=1.0)
+udtw = torchwarp.UDTW(gamma=1.0, beta=1.0)
+d, omega = udtw(X, Y, sigma_x, sigma_y)
 
 (d + omega).mean().backward()
 ```
@@ -64,45 +69,30 @@ practice they are predicted from the features by a small network
 (SigmaNet in the paper). `d` is the uDTW distance and `omega` the
 uncertainty penalty $\beta\,\Omega$, one value per pair (shape `[B]`); the training
 loss adds the two. For `normalize=True`, custom base distances and
-`torchwarp.udtw_from_cost`, see the [usage guide](docs/usage.md).
+`torchwarp.functional.udtw_from_cost`, see the [usage guide](docs/usage.md).
 
-### JEANIE
-
-```python
-import torch
-from torchwarp import euclidean_cost, jeanie_1d_from_cost
-
-device = "cuda" if torch.cuda.is_available() else "cpu"
-
-# query_features:   [K, T, D]
-# support_features: [U, D]
-query_features = torch.randn(5, 7, 64, device=device, requires_grad=True)
-support_features = torch.randn(7, 64, device=device)
-
-cost = euclidean_cost(query_features, support_features)   # [K, T, U]
-d_jeanie = jeanie_1d_from_cost(cost, gamma=0.1, max_shift=1)
-d_jeanie.backward()
-```
-
-### FVM
+### JEANIE and FVM
 
 ```python
 import torch
-from torchwarp import euclidean_cost, fvm_query_only_1d
+import torchwarp
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
-# query_features:   [K, T, D]
-# support_features: [U, D]
-query_features = torch.randn(5, 7, 64, device=device, requires_grad=True)
-support_features = torch.randn(7, 64, device=device)
+# query: [B, K, T, D]
+# support: [B, U, D]
+query = torch.randn(4, 5, 7, 64, device=device, requires_grad=True)
+support = torch.randn(4, 7, 64, device=device, requires_grad=True)
 
-cost = euclidean_cost(query_features, support_features)   # [K, T, U]
-d_fvm = fvm_query_only_1d(cost, gamma=0.1)
-d_fvm.backward()
+jeanie = torchwarp.JEANIE(gamma=0.1, max_shift=1)
+fvm = torchwarp.FVM(gamma=0.1)
+
+d_jeanie = jeanie(query, support)   # [B]
+d_fvm = fvm(query, support)         # [B]
+(d_jeanie + d_fvm).mean().backward()
 ```
 
-In both examples:
+where:
 
 - `K` = number of query viewpoints
 - `T` = number of query temporal blocks
@@ -111,10 +101,21 @@ In both examples:
 
 The features are encoded temporal blocks of 3D skeleton sequences; the
 query is rotated to `K` simulated camera viewpoints before encoding.
-`cost` has shape `[K, T, U]`.
 
-For batched inputs and more advanced configurations, including two
-viewpoint axes, see the [usage guide](docs/usage.md).
+The same calls in functional form, plus `*_from_cost` variants that take
+a precomputed cost tensor:
+
+```python
+import torchwarp.functional as TF
+
+d_jeanie = TF.jeanie(query, support, gamma=0.1, max_shift=1)
+cost = TF.euclidean_cost(query, support)          # [B, K, T, U]
+d_fvm = TF.fvm_from_cost(cost, gamma=0.1)
+```
+
+For two viewpoint axes, other base distances and the full list of
+functions, see the [usage guide](docs/usage.md) and the
+[API reference](docs/api.md).
 
 ## Example
 

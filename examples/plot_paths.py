@@ -48,6 +48,7 @@ def rotate(seq, deg):                                           # about the vert
 
 support = torch.cumsum(0.3 * torch.randn(20, 3), dim=0)         # [U, D]
 query = torch.stack([rotate(rotate(support, 30), g) for g in angles])  # [K, T, D]
+query, support = query.unsqueeze(0), support.unsqueeze(0)       # [B, K, T, D], [B, U, D]
 
 fig = plot.viewpoint_figure(query, support, angles, gamma=0.1, max_shift=1)
 fig.savefig("plot_paths_jeanie.png", dpi=150)

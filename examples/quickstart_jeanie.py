@@ -5,7 +5,7 @@
 
 import torch
 
-from torchwarp import JEANIE, euclidean_cost, fvm_query_only_1d
+from torchwarp import FVM, JEANIE
 
 torch.manual_seed(0)
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -24,8 +24,8 @@ s = supports.repeat(len(labels), 1, 1)
 jeanie = JEANIE(gamma=0.1, max_shift=1)
 d_jeanie = jeanie(q, s).view(len(labels), n_way)                            # [queries, n_way]
 
-cost = euclidean_cost(q, s)                                                 # [P, K, T, T]
-d_fvm = fvm_query_only_1d(cost, gamma=0.1).view(len(labels), n_way)
+fvm = FVM(gamma=0.1)
+d_fvm = fvm(q, s).view(len(labels), n_way)
 
 for name, d in [("JEANIE", d_jeanie), ("FVM", d_fvm)]:
     acc = (d.argmin(dim=1) == labels).float().mean().item()

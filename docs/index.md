@@ -36,7 +36,8 @@ torchwarp is an accelerated PyTorch implementation of uncertainty-DTW and JEANIE
 
 | module | contents |
 | --- | --- |
-| `torchwarp` | `UDTW`, `JEANIE`, `SoftDTW`, the functional APIs, FVM and base distances |
+| `torchwarp` | the modules `UDTW`, `SoftDTW`, `JEANIE`, `FVM` and the base distances |
+| `torchwarp.functional` | one function per module (`udtw`, `soft_dtw`, `jeanie`, `fvm`) and `*_from_cost` variants on a precomputed cost |
 | `torchwarp.paths` | path matrices and optimal paths for visualization |
 | `torchwarp.plot` | matplotlib figures of the paths |
 
@@ -53,7 +54,9 @@ torchwarp is an accelerated PyTorch implementation of uncertainty-DTW and JEANIE
 * **dtypes**: float32 and float64 are computed as given; other floating
   types (float16, bfloat16) are computed in float32. Under autocast the
   dynamic programs run in float32.
-* **Batching**: most functions take one sequence pair or a batch with one
-  extra leading dimension; the API reference lists the accepted shapes.
-* **Arguments**: names that exist in the official uDTW and JEANIE code keep
-  its positional arguments; options torchwarp adds are keyword-only.
+* **Batching**: every input has a leading batch dimension `B` and every
+  distance is returned as `[B]`; the API reference lists the accepted
+  shapes.
+* **Modules and functions**: as in `torch.nn`, a module keeps its
+  hyperparameters from the constructor, and the function of the same
+  name in `torchwarp.functional` takes them as keyword-only arguments.

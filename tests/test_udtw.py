@@ -1,15 +1,13 @@
-"""torchwarp uDTW vs the official implementation (float64)."""
+"""torchwarp uDTW vs the stored outputs of the official implementation (float64)."""
 
 import pytest
 import torch
 
-from torchwarp import UDTW, _cuda, pairwise_matrices, udtw_from_cost
+from torchwarp import UDTW, _cuda
+from torchwarp.functional import pairwise_matrices, softmin, softmin_weights, udtw_from_cost
 
-from conftest import reference
-
-_ref = reference("udtw")
-RefUDTW = _ref.uDTW
-ref_pairwise = _ref.pairwise_matrices
+import golden as G
+from golden import golden
 
 HAS_CUDA = _cuda.available("udtw")
 BACKENDS = [("torch", "cpu")]
@@ -29,9 +27,9 @@ def _inputs(B, N, M, D=5, dtype=torch.float64):
     )
 
 
-def _run(module, inputs, device, beta=0.7):
+def _run(fn, inputs, device):
     xs = [x.detach().to(device).requires_grad_(True) for x in inputs]
-    dist, pen = module(*xs, beta=beta)
+    dist, pen = fn(*xs)
     # distinct weights so both outputs' gradients are exercised
     (dist.sum() + 2.0 * pen.sum()).backward()
     return [dist.detach().cpu(), pen.detach().cpu()] + [x.grad.cpu() for x in xs]
@@ -43,23 +41,23 @@ def _assert_all_close(got, want):
 
 
 @pytest.mark.parametrize("backend,device", BACKENDS, ids=IDS)
-@pytest.mark.parametrize("N,M", [(1, 1), (1, 6), (6, 1), (5, 8), (8, 5), (9, 9)])
-@pytest.mark.parametrize("gamma", [0.01, 0.1, 1.0])
+@pytest.mark.parametrize("N,M", G.UDTW_SHAPES)
+@pytest.mark.parametrize("gamma", G.GAMMAS)
 @pytest.mark.parametrize("normalize", [False, True])
 def test_matches_reference(backend, device, N, M, gamma, normalize):
-    inputs = _inputs(3, N, M)
-    want = _run(RefUDTW(gamma=gamma, normalize=normalize), inputs, "cpu")
-    got = _run(UDTW(gamma=gamma, normalize=normalize, backend=backend), inputs, device)
-    _assert_all_close(got, want)
+    ref = golden("udtw.matches", N=N, M=M, gamma=gamma, normalize=normalize)
+    got = _run(UDTW(gamma=gamma, beta=0.7, normalize=normalize, backend=backend),
+               ref["inputs"], device)
+    _assert_all_close(got, ref["outputs"])
 
 
 @pytest.mark.parametrize("backend,device", BACKENDS, ids=IDS)
-@pytest.mark.parametrize("N,M,bandwidth", [(9, 9, 1), (9, 9, 2), (6, 10, 4), (10, 6, 4.5), (7, 7, 0)])
+@pytest.mark.parametrize("N,M,bandwidth", G.UDTW_BANDS)
 def test_bandwidth_matches_reference(backend, device, N, M, bandwidth):
-    inputs = _inputs(2, N, M)
-    want = _run(RefUDTW(gamma=0.1, bandwidth=bandwidth), inputs, "cpu")
-    got = _run(UDTW(gamma=0.1, bandwidth=bandwidth, backend=backend), inputs, device)
-    _assert_all_close(got, want)
+    ref = golden("udtw.bandwidth", N=N, M=M, bandwidth=bandwidth)
+    got = _run(UDTW(gamma=0.1, beta=0.7, bandwidth=bandwidth, backend=backend),
+               ref["inputs"], device)
+    _assert_all_close(got, ref["outputs"])
 
 
 @pytest.mark.parametrize("backend,device", BACKENDS, ids=IDS)
@@ -70,21 +68,27 @@ def test_unreachable_band_raises(backend, device):
 
 
 @pytest.mark.parametrize("backend,device", BACKENDS, ids=IDS)
-@pytest.mark.parametrize("beta", [0.0, 1.0, 3.0])
+@pytest.mark.parametrize("beta", G.UDTW_BETAS)
 def test_beta(backend, device, beta):
-    inputs = _inputs(2, 4, 6)
-    want = _run(RefUDTW(gamma=0.1), inputs, "cpu", beta=beta)
-    got = _run(UDTW(gamma=0.1, backend=backend), inputs, device, beta=beta)
-    _assert_all_close(got, want)
+    ref = golden("udtw.beta", beta=beta)
+    got = _run(UDTW(gamma=0.1, beta=beta, backend=backend), ref["inputs"], device)
+    _assert_all_close(got, ref["outputs"])
 
 
 def test_pairwise_matrices_match_reference():
-    X, Y, SX, SY = _inputs(2, 4, 6)
+    ref = golden("udtw.pairwise_matrices")
     for method in ("gemm", "diff"):
-        got = pairwise_matrices(X, Y, SX, SY, beta=0.5, method=method)
-        want = ref_pairwise(X, Y, SX, SY, beta=0.5)
-        for a, b in zip(got, want):
+        got = pairwise_matrices(*ref["inputs"], beta=0.5, method=method)
+        for a, b in zip(got, ref["outputs"]):
             torch.testing.assert_close(a, b, atol=1e-12, rtol=1e-10)
+
+
+def test_softmin_matches_reference():
+    ref = golden("udtw.softmin")
+    v, want = ref["v"], ref["outputs"]
+    torch.testing.assert_close(softmin(v, 0.3, dim=1), want[0])
+    torch.testing.assert_close(softmin(v, 0.3), want[1])
+    torch.testing.assert_close(softmin_weights(v, 0.3, dim=1), want[2])
 
 
 @pytest.mark.parametrize("backend,device", BACKENDS, ids=IDS)
@@ -113,11 +117,11 @@ def test_gradcheck_with_band(backend, device):
 def test_float32_accuracy():
     # float32 vs the float64 truth, as max-normalised error. The reference
     # implementation itself reaches ~2e-4 on the gradients here.
-    inputs = _inputs(16, 20, 25, D=32)
-    truth = _run(RefUDTW(gamma=0.1), inputs, "cpu")
-    inputs32 = [x.float() for x in inputs]
+    ref = golden("udtw.float32")
+    truth = ref["outputs"]
+    inputs32 = [x.float() for x in ref["inputs"]]
     for backend, device in BACKENDS:
-        got = _run(UDTW(gamma=0.1, backend=backend), inputs32, device)
+        got = _run(UDTW(gamma=0.1, beta=0.7, backend=backend), inputs32, device)
         for a, b in zip(got, truth):
             err = ((a.double() - b).abs().max() / b.abs().max()).item()
             assert err < 1e-3, (backend, device, err)
@@ -141,9 +145,9 @@ def test_long_sequences_use_global_scratch():
 def test_fused_kernel_matches_unfused(N, M, bandwidth, normalize):
     # method="gemm" on CUDA takes the fused kernel; "diff" the unfused one.
     inputs = _inputs(4, N, M)
-    fused = _run(UDTW(gamma=0.1, bandwidth=bandwidth, normalize=normalize,
+    fused = _run(UDTW(gamma=0.1, beta=0.7, bandwidth=bandwidth, normalize=normalize,
                       backend="cuda"), inputs, "cuda")
-    unfused = _run(UDTW(gamma=0.1, bandwidth=bandwidth, normalize=normalize,
+    unfused = _run(UDTW(gamma=0.1, beta=0.7, bandwidth=bandwidth, normalize=normalize,
                         backend="cuda", method="diff"), inputs, "cuda")
     _assert_all_close(fused, unfused)
 
@@ -154,8 +158,8 @@ def test_fused_gradcheck():
     X, Y = torch.rand(2, 4, 3, **kw), torch.rand(2, 6, 3, **kw)
     SX = (0.5 + torch.rand(2, 4, 1, dtype=torch.float64, device="cuda")).requires_grad_()
     SY = (0.5 + torch.rand(2, 6, 1, dtype=torch.float64, device="cuda")).requires_grad_()
-    module = UDTW(gamma=0.3, backend="cuda")
-    assert torch.autograd.gradcheck(lambda *a: module(*a, beta=0.8), (X, Y, SX, SY))
+    module = UDTW(gamma=0.3, beta=0.8, backend="cuda")
+    assert torch.autograd.gradcheck(module, (X, Y, SX, SY))
 
 
 def test_only_one_output_used():
@@ -170,8 +174,10 @@ def test_input_validation():
     with pytest.raises(ValueError):
         UDTW(gamma=0.0)
     with pytest.raises(ValueError):
-        UDTW(gamma=0.1)(X, Y, SX, SY, beta=-1.0)
+        UDTW(gamma=0.1, beta=-1.0)
     with pytest.raises(ValueError):
         UDTW(gamma=0.1)(X[0], Y, SX, SY)
+    with pytest.raises(ValueError):           # unbatched inputs are not accepted
+        UDTW(gamma=0.1)(X[0], Y[0], SX[0], SY[0])
     with pytest.raises(ValueError):
         UDTW(gamma=0.1, backend="nope")

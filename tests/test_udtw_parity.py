@@ -1,6 +1,7 @@
 """Feature parity with the official (pure-autograd) implementation.
 
-Everything the official code supports must work, with the same numbers:
+Everything the official code supports must work, with the same numbers as
+its stored outputs (tests/golden):
 higher-order gradients (create_graph / MAML), forward mode, every
 torch.func transform, torch.compile and autocast.
 """
@@ -8,11 +9,11 @@ torch.func transform, torch.compile and autocast.
 import pytest
 import torch
 
-from torchwarp import UDTW, _cuda, pairwise_matrices, udtw_from_cost, udtw_from_features
+import torchwarp.functional as TF
+from torchwarp import UDTW, _cuda
+from torchwarp.functional import pairwise_matrices, udtw_from_cost
 
-from conftest import reference
-
-RefUDTW = reference("udtw").uDTW
+from golden import golden
 
 HAS_CUDA = _cuda.available("udtw")
 BACKENDS = [("torch", "cpu")]
@@ -37,9 +38,9 @@ def _inputs(B=2, N=5, M=6, D=4, seed=0):
             0.5 + torch.rand(B, M, 1, generator=g, **f64))
 
 
-def _scalar(module, beta=0.8):
+def _scalar(module):
     def f(X, Y, SX, SY):
-        d, p = module(X, Y, SX, SY, beta=beta)
+        d, p = module(X, Y, SX, SY)
         return d.sum() + 2.0 * p.sum()
     return f
 
@@ -50,8 +51,9 @@ def _scalar(module, beta=0.8):
 @pytest.mark.parametrize("method", METHODS)
 @pytest.mark.parametrize("normalize,bandwidth", [(False, None), (True, None), (False, 2)])
 def test_maml_meta_gradient(backend, device, method, normalize, bandwidth):
-    X, Y, SX, SY = _inputs()
-    W0 = torch.randn(4, 4, generator=torch.Generator().manual_seed(1), **f64)
+    ref = golden("udtw.maml", normalize=normalize, bandwidth=bandwidth)
+    X, Y, SX, SY = ref["inputs"]
+    W0 = ref["W0"]
 
     def meta_grad(module, dev):
         w = W0.clone().to(dev).requires_grad_()
@@ -61,17 +63,17 @@ def test_maml_meta_gradient(backend, device, method, normalize, bandwidth):
         w2 = w - 0.1 * g
         return torch.autograd.grad(f(a @ w2.T, b @ w2.T, sa, sb), w)[0].cpu()
 
-    kw = dict(gamma=0.3, normalize=normalize, bandwidth=bandwidth)
-    want = meta_grad(RefUDTW(**kw), "cpu")
-    got = meta_grad(UDTW(backend=backend, method=method, **kw), device)
-    _close(got, want)
+    got = meta_grad(UDTW(gamma=0.3, beta=0.8, normalize=normalize, bandwidth=bandwidth,
+                         backend=backend, method=method), device)
+    _close(got, ref["meta_grad"])
 
 
 @pytest.mark.parametrize("backend,device", BACKENDS, ids=IDS)
 @pytest.mark.parametrize("method", METHODS)
 def test_third_derivative(backend, device, method):
-    X, Y, SX, SY = _inputs(seed=3)
-    V = torch.randn_like(X)
+    ref = golden("udtw.third_derivative")
+    X, Y, SX, SY = ref["inputs"]
+    V = ref["V"]
 
     def d3(module, dev):
         t = torch.zeros((), device=dev, **f64).requires_grad_()
@@ -81,8 +83,8 @@ def test_third_derivative(backend, device, method):
             y, = torch.autograd.grad(y, t, create_graph=True)
         return y.detach().cpu()
 
-    _close(d3(UDTW(gamma=0.5, backend=backend, method=method), device),
-           d3(RefUDTW(gamma=0.5), "cpu"), tol=1e-7)
+    _close(d3(UDTW(gamma=0.5, beta=0.8, backend=backend, method=method), device),
+           ref["d3"], tol=1e-7)
 
 
 @pytest.mark.parametrize("backend,device", BACKENDS, ids=IDS)
@@ -94,34 +96,29 @@ def test_gradgradcheck(backend, device):
     assert torch.autograd.gradgradcheck(f, (cost, pen))
 
     X, Y, SX, SY = (t.to(device).requires_grad_() for t in _inputs(B=1, N=3, M=4, D=2))
-    g = lambda *a: udtw_from_features(*a, beta=0.7, gamma=0.4, backend=backend)
+    g = lambda *a: TF.udtw(*a, beta=0.7, gamma=0.4, backend=backend)
     assert torch.autograd.gradgradcheck(g, (X, Y, SX, SY))
 
 
 # ------------------------------------------------------------- torch.func
 
-def _ref_loss(X):
-    _, Y, SX, SY = _inputs(B=1, N=3, M=4, D=2)
-    return _scalar(RefUDTW(gamma=0.4))(X, Y, SX, SY)
-
-
 @pytest.mark.parametrize("backend,device", BACKENDS, ids=IDS)
 @pytest.mark.parametrize("method", METHODS)
 def test_torch_func_transforms(backend, device, method):
-    X, Y, SX, SY = _inputs(B=1, N=3, M=4, D=2)
+    ref = golden("udtw.func")
+    X, Y, SX, SY = ref["inputs"]
     rest = tuple(t.to(device) for t in (Y, SX, SY))
-    fast = UDTW(gamma=0.4, backend=backend, method=method)
+    fast = UDTW(gamma=0.4, beta=0.8, backend=backend, method=method)
     f = lambda x: _scalar(fast)(x, *rest)
     x = X.to(device)
 
-    _close(torch.func.grad(f)(x).cpu(), torch.autograd.functional.jacobian(_ref_loss, X))
-    _close(torch.func.jacrev(f)(x).cpu(), torch.autograd.functional.jacobian(_ref_loss, X))
-    _close(torch.func.jacfwd(f)(x).cpu(), torch.autograd.functional.jacobian(_ref_loss, X))
-    v = torch.randn_like(X)
-    _, jvp = torch.func.jvp(f, (x,), (v.to(device),))
-    _, ref_jvp = torch.autograd.functional.jvp(_ref_loss, X, v)
-    _close(jvp.cpu(), ref_jvp)
-    H = torch.autograd.functional.hessian(_ref_loss, X)
+    J = ref["jacobian"]
+    _close(torch.func.grad(f)(x).cpu(), J)
+    _close(torch.func.jacrev(f)(x).cpu(), J)
+    _close(torch.func.jacfwd(f)(x).cpu(), J)
+    _, jvp = torch.func.jvp(f, (x,), (ref["v"].to(device),))
+    _close(jvp.cpu(), ref["jvp"])
+    H = ref["hessian"]
     _close(torch.func.hessian(f)(x).cpu(), H, tol=1e-7)
     _close(torch.func.jacrev(torch.func.jacrev(f))(x).cpu(), H, tol=1e-7)
 
@@ -129,14 +126,13 @@ def test_torch_func_transforms(backend, device, method):
 @pytest.mark.parametrize("backend,device", BACKENDS, ids=IDS)
 @pytest.mark.parametrize("method", METHODS)
 def test_vmap(backend, device, method):
-    X, Y, SX, SY = (t.to(device) for t in _inputs(B=2, N=4, M=5))
+    ref = golden("udtw.vmap")
+    X, Y, SX, SY = (t.to(device) for t in ref["inputs"])
     stack = lambda t: torch.stack([t, 1.1 * t, 0.9 * t])
-    fast = UDTW(gamma=0.3, backend=backend, method=method)
-    d, p = torch.func.vmap(lambda *a: fast(*a, beta=0.5))(stack(X), stack(Y), stack(SX), stack(SY))
-    for k in range(3):
-        dk, pk = RefUDTW(gamma=0.3)(*(stack(t)[k].cpu() for t in (X, Y, SX, SY)), beta=0.5)
-        _close(d[k].cpu(), dk)
-        _close(p[k].cpu(), pk)
+    fast = UDTW(gamma=0.3, beta=0.5, backend=backend, method=method)
+    d, p = torch.func.vmap(fast)(stack(X), stack(Y), stack(SX), stack(SY))
+    _close(d.cpu(), ref["distance"])
+    _close(p.cpu(), ref["penalty"])
     # per-sample gradients: vmap(grad)
     g = torch.func.vmap(torch.func.grad(lambda x, y, sx, sy: _scalar(fast)(x[None], y[None], sx[None], sy[None])))
     per_sample = g(X, Y, SX, SY)
@@ -151,7 +147,7 @@ def test_vmap(backend, device, method):
 def test_torch_compile_fullgraph(backend, device, method):
     torch._dynamo.reset()
     X, Y, SX, SY = (t.to(device).requires_grad_() for t in _inputs(B=3, N=5, M=7))
-    fast = UDTW(gamma=0.3, normalize=True, backend=backend, method=method)
+    fast = UDTW(gamma=0.3, beta=0.8, normalize=True, backend=backend, method=method)
     f = _scalar(fast)
     compiled = torch.compile(f, fullgraph=True)
     want = f(X, Y, SX, SY)

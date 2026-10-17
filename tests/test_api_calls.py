@@ -17,6 +17,7 @@ import pytest
 import torch
 
 import torchwarp
+import torchwarp.functional as TF
 from torchwarp import paths, plot
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -25,7 +26,9 @@ SOURCES = sorted([ROOT / "README.md", *(ROOT / "docs").glob("*.md"),
 
 
 API = ROOT / "docs" / "api.md"
-SIGNATURE = re.compile(r"^(torchwarp(?:\.\w+)+)\((.*)\)\s*$", flags=re.S)
+# a signature block: torchwarp.Name(...) or TF.name(...) (TF = torchwarp.functional)
+SIGNATURE = re.compile(r"^((?:torchwarp|TF)(?:\.\w+)+)\((.*)\)\s*$", flags=re.S)
+ROOTS = {"torchwarp": torchwarp, "TF": TF}
 
 
 def _blocks(path):
@@ -65,7 +68,7 @@ def _check_call(call, obj):
 
 
 def _problems(path):
-    names = {"torchwarp": torchwarp}                 # docs use torchwarp.* without importing
+    names = dict(ROOTS)                             # docs use torchwarp.* / TF.* without importing
     out = []
     for i, code in enumerate(_blocks(path)):
         tree = ast.parse(code)
@@ -73,7 +76,10 @@ def _problems(path):
             if isinstance(node, ast.Import):
                 for a in node.names:
                     if a.name == "torchwarp" or a.name.startswith("torchwarp."):
-                        names[a.asname or a.name.split(".")[0]] = torchwarp
+                        if a.asname:                # import torchwarp.functional as TF
+                            names[a.asname] = importlib.import_module(a.name)
+                        else:
+                            names["torchwarp"] = torchwarp
             elif isinstance(node, ast.ImportFrom) and (node.module or "").startswith("torchwarp"):
                 module = importlib.import_module(node.module)
                 for a in node.names:
@@ -117,8 +123,9 @@ def _documented():
         m = SIGNATURE.match(block.strip())
         if m is None:
             continue
-        obj = torchwarp
-        for attr in m.group(1).split(".")[1:]:
+        root, *attrs = m.group(1).split(".")
+        obj = ROOTS[root]
+        for attr in attrs:
             obj = getattr(obj, attr)
         ns = {}
         exec("def f({}):\n    pass".format(m.group(2)), ns)
@@ -133,6 +140,7 @@ def test_api_md_signatures():
     documented = _documented()
     assert [p for p in documented.values() if p] == []
     public = [getattr(torchwarp, n) for n in torchwarp.__all__]
+    public += [getattr(TF, n) for n in TF.__all__]
     public += [getattr(paths, n) for n in paths.__all__] + [getattr(plot, n) for n in plot.__all__]
     public = [o for o in public if inspect.isfunction(o)
               or (inspect.isclass(o) and issubclass(o, torch.nn.Module))]

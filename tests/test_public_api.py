@@ -4,7 +4,8 @@ import pytest
 import torch
 
 import torchwarp
-from torchwarp import JEANIE, UDTW, _cuda
+import torchwarp.functional as TF
+from torchwarp import FVM, JEANIE, UDTW, _cuda
 from torchwarp.jeanie.functional import _jeanie_dp
 
 BACKENDS = [("torch", "cpu")]
@@ -19,8 +20,18 @@ f64 = dict(dtype=torch.float64)
 def test_exports():
     for name in torchwarp.__all__:
         assert hasattr(torchwarp, name), name
+    for name in TF.__all__:
+        assert hasattr(TF, name), name
     assert torchwarp.__version__
-    assert torchwarp.uDTW is torchwarp.UDTW
+    assert torchwarp.functional is TF
+    # removed in the API refactor: the alias and the old top-level functions
+    for name in ("uDTW", "udtw_from_features", "jeanie_1d_from_cost", "fvm_query_only_1d",
+                 "soft_dtw", "softmin"):
+        assert not hasattr(torchwarp, name), name
+    with pytest.raises(TypeError):
+        UDTW(use_cuda=False)
+    with pytest.raises(TypeError):
+        torchwarp.SoftDTW(use_cuda=False)
 
 
 def test_cost_on_sequence_pairs():
@@ -39,12 +50,12 @@ def test_udtw_module(backend, device):
     X, Y = torch.rand(3, 6, 4, generator=g, **f64), torch.rand(3, 8, 4, generator=g, **f64)
     SX, SY = torch.rand(3, 6, 1, generator=g, **f64) + 0.5, torch.rand(3, 8, 1, generator=g, **f64) + 0.5
     xs = [t.to(device).requires_grad_() for t in (X, Y, SX, SY)]
-    d, p = UDTW(gamma=0.3, backend=backend)(*xs, beta=0.5)
+    d, p = UDTW(gamma=0.3, beta=0.5, backend=backend)(*xs)
     assert d.shape == p.shape == (3,)
     (d.sum() + p.sum()).backward()
     assert all(torch.isfinite(x.grad).all() for x in xs)
     # the two distance formulations agree
-    d2, p2 = UDTW(gamma=0.3, backend=backend, method="diff")(*xs, beta=0.5)
+    d2, p2 = UDTW(gamma=0.3, beta=0.5, backend=backend, method="diff")(*xs)
     torch.testing.assert_close(d, d2)
     torch.testing.assert_close(p, p2)
 
@@ -58,14 +69,26 @@ def test_jeanie_module(backend, device):
 
     d1, R1 = JEANIE(gamma=0.1, max_shift=1, backend=backend)(q1, s, return_accumulator=True)
     assert d1.shape == (2,) and R1.shape == (2, 4, 6, 7)
-    torch.testing.assert_close(
-        d1, torchwarp.jeanie_1d_from_features(q1, s, gamma=0.1, max_shift=1, backend=backend))
+    torch.testing.assert_close(d1, TF.jeanie(q1, s, gamma=0.1, max_shift=1, backend=backend))
 
     d2 = JEANIE(gamma=0.1, max_shift=(1, 1), backend=backend)(q2, s)
-    torch.testing.assert_close(
-        d2, torchwarp.jeanie_2d_from_features(q2, s, gamma=0.1, max_shift_az=1, max_shift_alt=1,
-                                               backend=backend))
+    torch.testing.assert_close(d2, TF.jeanie(q2, s, gamma=0.1, max_shift=(1, 1), backend=backend))
     assert "max_shift=(1, 1)" in repr(JEANIE(gamma=0.1, max_shift=(1, 1)))
+    # an int max_shift applies to both viewpoint axes of a 5-D query
+    torch.testing.assert_close(JEANIE(gamma=0.1, max_shift=1, backend=backend)(q2, s), d2)
+    d20 = JEANIE(gamma=0.1, max_shift=(1, 0), backend=backend)(q2, s)
+    torch.testing.assert_close(
+        d20, TF.jeanie_from_cost(torchwarp.euclidean_cost(q2, s.unsqueeze(1)), gamma=0.1,
+                                 max_shift=(1, 0), backend=backend))
+    # a max_shift tuple must have one entry per viewpoint axis
+    with pytest.raises(ValueError):
+        JEANIE(gamma=0.1, max_shift=(1, 1))(q1, s)
+    with pytest.raises(ValueError):
+        JEANIE(gamma=0.1, max_shift=(1,))(q2, s)
+    with pytest.raises(ValueError):
+        TF.jeanie(q2, s, max_shift=(1, 1, 1))
+    with pytest.raises(ValueError):
+        TF.jeanie_from_cost(torch.rand(2, 3, 4, 5, **f64).to(device), max_shift=(1, 1))
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
@@ -83,15 +106,10 @@ def test_gradcheck(backend, device):
     c = torch.rand(2, 3, 4, **kw).requires_grad_()
     q = torch.randn(2, 3, 4, **kw).requires_grad_()
     assert torch.autograd.gradcheck(
-        lambda a, b: torchwarp.udtw_from_cost(a, b, gamma=0.4, backend=backend), (c, q))
+        lambda a, b: TF.udtw_from_cost(a, b, gamma=0.4, backend=backend), (c, q))
     cost = torch.rand(2, 2, 1, 3, 4, **kw).requires_grad_()
     assert torch.autograd.gradcheck(
         lambda a: _jeanie_dp(a, 0.4, 1, 0, backend)[0], (cost,))
-
-
-def test_reference_names():
-    from torchwarp._reference import _UPSTREAM
-    assert set(_UPSTREAM) == {"udtw", "jeanie"}
 
 
 def _naive_soft_dtw(D, gamma, band=0):
@@ -126,13 +144,82 @@ def test_soft_dtw_module(backend, device, bandwidth):
     torch.testing.assert_close(div(X, Y), d - 0.5 * (sdtw(X, X) + sdtw(Y, Y)))
     l1 = lambda a, b: (a.unsqueeze(2) - b.unsqueeze(1)).abs().sum(-1)
     d1 = torchwarp.SoftDTW(gamma=0.5, dist_func=l1, backend=backend)(X, Y)
-    torch.testing.assert_close(d1, torchwarp.soft_dtw(l1(X, Y), 0.5))
+    torch.testing.assert_close(d1, TF.soft_dtw_from_cost(l1(X, Y), gamma=0.5))
+    # the functional form and soft_dtw_from_cost on the default distance agree
+    torch.testing.assert_close(TF.soft_dtw(X, Y, gamma=0.5, bandwidth=bandwidth, backend=backend),
+                               d)
+    torch.testing.assert_close(
+        TF.soft_dtw_from_cost(torchwarp.squared_euclidean_cost(X, Y), gamma=0.5,
+                              bandwidth=bandwidth, backend=backend), d)
+
+
+def test_soft_dtw_rejects_unbatched():
+    X, Y = torch.randn(6, 2, **f64), torch.randn(8, 2, **f64)
+    with pytest.raises(ValueError):
+        torchwarp.SoftDTW(gamma=0.5)(X, Y)
+    with pytest.raises(ValueError):
+        TF.soft_dtw_from_cost(torchwarp.squared_euclidean_cost(X, Y), gamma=0.5)
 
 
 def test_softmin_weights():
     v = torch.randn(3, 4, **f64)
-    torch.testing.assert_close(torchwarp.softmin_weights(v, 0.5, dim=1),
+    torch.testing.assert_close(TF.softmin_weights(v, 0.5, dim=1),
                                torch.softmax(-v / 0.5, dim=1))
+    torch.testing.assert_close(TF.softmin(v, 0.5, dim=1),
+                               -0.5 * torch.logsumexp(-v / 0.5, dim=1))
+
+
+@pytest.mark.parametrize("backend,device", BACKENDS, ids=IDS)
+def test_udtw_functional_normalize_matches_module(backend, device):
+    g = torch.Generator().manual_seed(5)
+    X, Y = torch.randn(2, 5, 3, generator=g, **f64), torch.randn(2, 7, 3, generator=g, **f64)
+    sx = torch.rand(2, 5, 1, generator=g, **f64) + 0.5
+    sy = torch.rand(2, 7, 1, generator=g, **f64) + 0.5
+    xs = [t.to(device) for t in (X, Y, sx, sy)]
+    for method in ("gemm", "diff"):
+        want = UDTW(gamma=0.3, beta=0.6, normalize=True, method=method, backend=backend)(*xs)
+        got = TF.udtw(*xs, beta=0.6, gamma=0.3, normalize=True, method=method, backend=backend)
+        for a, b in zip(got, want):
+            torch.testing.assert_close(a, b)
+        # normalize=True is d(X,Y) - 0.5 [d(X,X) + d(Y,Y)]
+        d = lambda a, b, sa, sb: TF.udtw(a, b, sa, sb, beta=0.6, gamma=0.3, method=method,
+                                         backend=backend)
+        xy, xx, yy = d(*xs), d(xs[0], xs[0], xs[2], xs[2]), d(xs[1], xs[1], xs[3], xs[3])
+        for i in range(2):
+            torch.testing.assert_close(got[i], xy[i] - 0.5 * (xx[i] + yy[i]))
+
+
+@pytest.mark.parametrize("backend,device", BACKENDS, ids=IDS)
+@pytest.mark.parametrize("metric", ["euclidean", "sqeuclidean", "rbf"])
+def test_fvm_module(backend, device, metric):
+    g = torch.Generator().manual_seed(6)
+    s = torch.randn(2, 7, 5, generator=g, **f64).to(device)
+    q1 = torch.randn(2, 4, 6, 5, generator=g, **f64).to(device)        # one viewpoint axis
+    q2 = torch.randn(2, 3, 2, 6, 5, generator=g, **f64).to(device)     # two viewpoint axes
+    cost_fn = {"euclidean": torchwarp.euclidean_cost,
+               "sqeuclidean": torchwarp.squared_euclidean_cost, "rbf": torchwarp.rbf_cost}[metric]
+    m = FVM(gamma=0.2, metric=metric, backend=backend)
+    torch.testing.assert_close(
+        m(q1, s), TF.fvm_from_cost(cost_fn(q1, s), gamma=0.2, backend=backend))
+    torch.testing.assert_close(
+        m(q2, s), TF.fvm_from_cost(cost_fn(q2, s.unsqueeze(1)), gamma=0.2, backend=backend))
+    torch.testing.assert_close(m(q1, s), TF.fvm(q1, s, gamma=0.2, metric=metric, backend=backend))
+    assert "gamma=0.2" in repr(m)
+
+
+@pytest.mark.parametrize("backend,device", BACKENDS, ids=IDS)
+def test_fvm_support_viewpoints(backend, device):
+    g = torch.Generator().manual_seed(7)
+    q = torch.randn(2, 4, 6, 5, generator=g, **f64).to(device)    # [B, Kq, T, D]
+    s = torch.randn(2, 3, 7, 5, generator=g, **f64).to(device)    # [B, Ks, U, D]
+    cost = torchwarp.euclidean_cost(q.unsqueeze(2), s.unsqueeze(1))  # [B, Kq, Ks, T, U]
+    assert cost.shape == (2, 4, 3, 6, 7)
+    want = TF.fvm_from_cost(cost, gamma=0.1, backend=backend)
+    torch.testing.assert_close(TF.fvm(q, s, gamma=0.1, backend=backend), want)
+    torch.testing.assert_close(FVM(gamma=0.1, backend=backend)(q, s), want)
+    # one SoftMin over all viewpoint pairs: flattening the two dims gives the same
+    flat = cost.reshape(2, 12, 6, 7)
+    torch.testing.assert_close(TF.fvm_from_cost(flat, gamma=0.1, backend=backend), want)
 
 
 def test_udtw_output_defaults_keyword_only():
@@ -143,11 +230,22 @@ def test_udtw_output_defaults_keyword_only():
     out = UDTW()(X, Y, sx, sy)
     d, omega = out
     assert out.distance is d and out.penalty is omega
-    torch.testing.assert_close(torchwarp.udtw_from_features(X, Y, sx, sy).distance, d)
+    torch.testing.assert_close(TF.udtw(X, Y, sx, sy).distance, d)
     # torchwarp.paths has the defaults of the computation
     torch.testing.assert_close(torchwarp.paths.udtw(X, Y, sx, sy).distance, d)
     # options of torchwarp's own functions are keyword-only
     with pytest.raises(TypeError):
-        torchwarp.udtw_from_features(X, Y, sx, sy, 0.1, 1.0)
+        TF.udtw(X, Y, sx, sy, 0.1, 1.0)
+    with pytest.raises(TypeError):
+        TF.udtw_from_cost(X @ Y.transpose(1, 2), X @ Y.transpose(1, 2), 0.1)
+    with pytest.raises(TypeError):
+        TF.fvm_from_cost(torch.rand(1, 2, 3, 4), 0.1)
+    with pytest.raises(TypeError):
+        TF.soft_dtw_from_cost(torch.rand(1, 3, 4), 0.1)
+    # a batch dimension is required
+    with pytest.raises(ValueError):
+        TF.udtw(X[0], Y[0], sx[0], sy[0])
+    with pytest.raises(ValueError):
+        TF.udtw_from_cost(torch.rand(3, 4), torch.rand(3, 4))
     with pytest.raises(TypeError):
         torchwarp.paths.udtw(X, Y, sx, sy, 0.1)

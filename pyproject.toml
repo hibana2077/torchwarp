@@ -96,4 +96,4 @@ ignore = ["E731", "E741"]   # lambdas as local functions; `l` for losses/lengths
 
 [tool.ruff.lint.isort]
 known-first-party = ["torchwarp"]
-known-local-folder = ["conftest", "ecg5000_forecast", "nwucla_fewshot"]
+known-local-folder = ["conftest", "golden", "ecg5000_forecast", "nwucla_fewshot"]
