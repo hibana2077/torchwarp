@@ -135,6 +135,8 @@ functions, see the [usage guide](docs/usage.md) and the
 
 ### Quantitative results
 
+We evaluate torchwarp on time series forecasting and few-shot skeleton action recognition, comparing task performance across alignment methods and computational efficiency improvements.
+
 #### Time series forecasting (ECG5000)
 
 We evaluate multistep forecasting on UCR ECG5000 using the official train/test split (500/4,500 series) without additional normalization. An MLP (84-256-56, ReLU) predicts the last 40% of each series from the first 60%, trained with Adam (lr=0.001, batch size=50) for 100 epochs under identical settings across losses. Results are reported as mean and std over three seeds (42, 43, 44), using MSE and DTW-based evaluation metrics. Soft-DTW and its divergence use γ=0.001.
