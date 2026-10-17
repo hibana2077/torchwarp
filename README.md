@@ -188,48 +188,6 @@ the two on the same device.
 
 Hardware, software versions, timing method and experimental settings are in [benchmarks](docs/benchmarks.md).
 
-## Examples
-
-Short scripts to copy from (CPU or GPU):
-
-```bash
-python examples/quickstart_udtw.py     # uDTW as a training loss with a learned uncertainty
-python examples/quickstart_jeanie.py   # JEANIE and FVM in a 5-way 1-shot episode
-python examples/plot_paths.py          # plot the paths of uDTW and JEANIE (needs matplotlib)
-```
-
-Every function in `torchwarp.paths` returns an `Alignment` that can draw
-itself, e.g. `a.plot("twoway", X=X, Y=Y)`; see
-[Visualization](docs/usage.md#visualization).
-
-## Experiments
-
-To run the NW-UCLA experiments of the table (seeds 42, 43, 44 by default;
-results are written to `experiments/results/`):
-
-```bash
-bash experiments/download_data.sh
-for m in sdtw sdtw_div udtw fvm; do python experiments/nwucla_fewshot.py --method $m; done
-for s in 1 2; do python experiments/nwucla_fewshot.py --method jeanie --max-shift $s; done
-```
-
-To draw the soft-DTW, FVM and JEANIE alignment paths for the NW-UCLA
-test split:
-
-```bash
-python experiments/nwucla_fewshot.py --method jeanie --seeds 42 --save-ckpt experiments/results/ckpt
-python experiments/nwucla_plot_paths.py
-```
-
-To run the ECG5000 experiments of the table, the uDTW validation search
-and the timing:
-
-```bash
-for l in euclidean dtw sdtw sdtw_div udtw; do python experiments/ecg5000_forecast.py --loss $l; done
-python experiments/ecg5000_tune.py run && python experiments/ecg5000_tune.py select
-python experiments/ecg5000_speed.py
-```
-
 ## Acknowledgements
 
 This faster implementation builds upon the original [uDTW](https://github.com/LeiWangR/uDTW) and [JEANIE](https://github.com/LeiWangR/JEANIE) repositories. We thank the original contributors for making their implementations publicly available.
