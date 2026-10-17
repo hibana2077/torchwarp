@@ -470,14 +470,17 @@ figure functions create and return a `matplotlib.figure.Figure`.
 
 ```python
 torchwarp.plot.udtw_figure(X, Y, sigma_x, sigma_y, *, gammas=(0.01, 0.1),
-                           beta=1.0, index=0, power=0.1, threshold=0.6)
+                           beta=1.0, index=0, power=0.1, threshold=0.6,
+                           bin_width=0.2, std=True)
 ```
 
 One row of panels for pair `index`: the sDTW path matrix for each $\gamma$ in
 `gammas` (same D, $\Sigma = 1$), the uDTW path matrix for each $\gamma$, and the
 uncertainty $\Sigma$ on the uDTW path for the first $\gamma$. Pixels are raised to the
 power `power` so that faint paths are visible; `threshold` binarizes the
-path for the uncertainty panel. **Returns** a `Figure`.
+path for the uncertainty panel; `bin_width` is the width of the histogram bins and
+`std` is passed to `plot.uncertainty`.
+**Returns** a `Figure`.
 
 ### `plot.viewpoint_figure`
 
@@ -518,11 +521,14 @@ viewpoints if there are any).
 
 ```python
 torchwarp.plot.uncertainty(a, *, index=0, ax=None, power=0.1, threshold=0.6,
-                           hist=True, title=None)
+                           hist=True, bin_width=0.2,
+                           std=True, title=None)
 ```
 
-The binarized path of a uDTW `Alignment` multiplied by $\Sigma$ (white = high
-uncertainty), with a histogram of $\Sigma$ on the path when `hist=True`.
+The binarized path of a uDTW `Alignment` multiplied by $\sigma = \sqrt{\Sigma}$
+(`std=True`) or by the variance $\Sigma$ (`std=False`) (white = high
+uncertainty), with a histogram of these values on the path when `hist=True`
+(bins and x ticks every `bin_width`, edges at multiples of `bin_width`).
 
 ### `plot.twoway`
 

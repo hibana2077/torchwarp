@@ -67,11 +67,14 @@ def alignment(a, *, index=0, ax=None, power=0.1, title=None):
     return ax
 
 
-def uncertainty(a, *, index=0, ax=None, power=0.1, threshold=0.6, hist=True, title=None):
-    """Uncertainty Sigma on the path, white pixels = high uncertainty (uDTW Fig. 2e).
+def uncertainty(a, *, index=0, ax=None, power=0.1, threshold=0.6, hist=True, bin_width=0.2,
+                std=True, title=None):
+    """Uncertainty on the path, white pixels = high uncertainty (uDTW Fig. 2e).
 
     The plot of ``alignment`` is binarized at ``threshold`` and multiplied by
-    Sigma; the inset is the histogram of the values of Sigma on the path.
+    sigma = sqrt(Sigma) (``std=True``) or by the variance Sigma (``std=False``);
+    the inset is the histogram of these values on the path, with bins and x
+    ticks every ``bin_width`` (edges at multiples of ``bin_width``).
     """
     if a.Sigma is None:
         raise ValueError("uncertainty() needs a uDTW Alignment (with variance)")
@@ -79,6 +82,8 @@ def uncertainty(a, *, index=0, ax=None, power=0.1, threshold=0.6, hist=True, tit
     ax = ax or plt.gca()
     mask = _image(a.path_matrix[index], power) > threshold
     var = _np(a.Sigma[index])
+    if std:
+        var = np.sqrt(var)
     on_path = var[mask]
     lo, hi = on_path.min(), on_path.max()
     img = np.where(mask, (var - lo) / max(hi - lo, 1e-12) * 0.85 + 0.15, 0.0)
@@ -90,21 +95,20 @@ def uncertainty(a, *, index=0, ax=None, power=0.1, threshold=0.6, hist=True, tit
         ax.add_patch(plt.Rectangle((0.51, 0.63), 0.49, 0.37, transform=ax.transAxes,
                                    facecolor="white", edgecolor="none"))
         ins = ax.inset_axes([0.565, 0.69, 0.405, 0.3])
-        ins.set_facecolor("#f7f7f7")
-        ins.hist(on_path, bins=5, color="red", rwidth=0.9)
+        edges = np.arange(np.floor(lo / bin_width), np.ceil(hi / bin_width) + 1) * bin_width
+        ins.hist(on_path, bins=edges, color="red", rwidth=0.9)
+        ins.set_xlim(edges[0], edges[-1])
         ins.set_ylabel("Counts", fontsize=5, labelpad=0.5)
         ins.tick_params(labelsize=4.5, length=1, pad=0.5)
-        ins.set_yticklabels([])
-        ins.xaxis.set_major_locator(_ticker().MaxNLocator(4))
-        ins.xaxis.set_minor_locator(_ticker().AutoMinorLocator(2))
+        ins.xaxis.set_major_locator(_ticker().MultipleLocator(bin_width))
+        ins.xaxis.set_major_formatter(_ticker().FormatStrFormatter("%.1f"))
+        ins.tick_params(axis="x", labelsize=3.6)
         ins.yaxis.set_major_locator(_ticker().MaxNLocator(6))
-        ins.tick_params(which="minor", length=0)
-        ins.grid(True, which="both", color="#c8c8c8", linewidth=0.3)
+        ins.set_yticklabels([])
+        ins.grid(True, color="#c8c8c8", linewidth=0.3)
         ins.set_axisbelow(True)
-        for side in ("top", "right"):
-            ins.spines[side].set_visible(False)
-        for side in ("left", "bottom"):
-            ins.spines[side].set_linewidth(0.4)
+        for spine in ins.spines.values():
+            spine.set_linewidth(0.4)
     if title:
         ax.set_title(title, y=-0.16, fontsize=10)
     return ax
@@ -254,7 +258,7 @@ def path_3d(alignments, *, labels=None, index=0, ax=None, angles=None, colors=No
 
 
 def udtw_figure(X, Y, sigma_x, sigma_y, *, gammas=(0.01, 0.1), beta=1.0, index=0, power=0.1,
-                threshold=0.6):
+                threshold=0.6, bin_width=0.2, std=True):
     """uDTW Fig. 2: sDTW and uDTW paths for two gammas, and uDTW uncertainty.
 
     X [B, N, D], Y [B, M, D], sigma_x [B, N, 1], sigma_y [B, M, 1]; batch item
@@ -276,7 +280,7 @@ def udtw_figure(X, Y, sigma_x, sigma_y, *, gammas=(0.01, 0.1), beta=1.0, index=0
                   title=r"uDTW$_{\gamma=%g}$" % g)
         col += 1
     uncertainty(us[0], index=index, ax=axes[col], power=power, threshold=threshold,
-                title="uDTW uncert.")
+                bin_width=bin_width, std=std, title="uDTW uncert.")
     fig.subplots_adjust(wspace=0.08, left=0.01, right=0.99, top=0.98, bottom=0.14)
     return fig
 

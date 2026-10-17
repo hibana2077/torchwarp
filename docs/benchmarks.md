@@ -175,7 +175,7 @@ python experiments/nwucla_plot_paths.py --query 970 --support 1005 --out assets
 ```
 
 `ecg5000_plot_paths.py` writes `assets/udtw_paths_ecg5000.png` (test series
-`--index`, default 0). `nwucla_plot_paths.py` with `--query 970 --support
+`--index`, default 204). `nwucla_plot_paths.py` with `--query 970 --support
 1005` writes `assets/viewpoint_paths_nwucla.png` (two sequences of the
 action donning).
 

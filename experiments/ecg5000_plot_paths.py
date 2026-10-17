@@ -46,7 +46,7 @@ def udtw_figure(path, index, device):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--index", type=int, default=0)
+    ap.add_argument("--index", type=int, default=204)
     ap.add_argument("--out", default=str(ROOT / "assets"))
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = ap.parse_args()
