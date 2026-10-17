@@ -71,7 +71,7 @@ uncertainty penalty $\beta\,\Omega$, one value per pair (shape `[B]`); the train
 loss adds the two. For `normalize=True`, custom base distances and
 `torchwarp.functional.udtw_from_cost`, see the [usage guide](docs/usage.md).
 
-### JEANIE and FVM
+### JEANIE
 
 ```python
 import torch
@@ -85,11 +85,8 @@ query = torch.randn(4, 5, 7, 64, device=device, requires_grad=True)
 support = torch.randn(4, 7, 64, device=device, requires_grad=True)
 
 jeanie = torchwarp.JEANIE(gamma=0.1, max_shift=1)
-fvm = torchwarp.FVM(gamma=0.1)
-
-d_jeanie = jeanie(query, support)   # [B]
-d_fvm = fvm(query, support)         # [B]
-(d_jeanie + d_fvm).mean().backward()
+d = jeanie(query, support)   # [B]
+d.mean().backward()
 ```
 
 where:
@@ -102,15 +99,32 @@ where:
 The features are encoded temporal blocks of 3D skeleton sequences; the
 query is rotated to `K` simulated camera viewpoints before encoding.
 
-The same calls in functional form, plus `*_from_cost` variants that take
-a precomputed cost tensor:
+The same call in functional form:
 
 ```python
 import torchwarp.functional as TF
 
-d_jeanie = TF.jeanie(query, support, gamma=0.1, max_shift=1)
-cost = TF.euclidean_cost(query, support)          # [B, K, T, U]
-d_fvm = TF.fvm_from_cost(cost, gamma=0.1)
+d = TF.jeanie(query, support, gamma=0.1, max_shift=1)
+```
+
+### FVM
+
+FVM takes the same `query` and `support` tensors as JEANIE (see above):
+
+```python
+fvm = torchwarp.FVM(gamma=0.1)
+d = fvm(query, support)   # [B]
+d.mean().backward()
+```
+
+The functional form also has a `*_from_cost` variant that takes a
+precomputed cost tensor:
+
+```python
+import torchwarp.functional as TF
+
+cost = TF.euclidean_cost(query, support)   # [B, K, T, U]
+d = TF.fvm_from_cost(cost, gamma=0.1)
 ```
 
 For two viewpoint axes, other base distances and the full list of
