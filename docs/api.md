@@ -52,16 +52,10 @@ torchwarp.UDTW(gamma=1.0, beta=1.0, normalize=False, bandwidth=None, *,
                method="gemm", backend="auto")
 ```
 
-Computes the uncertainty-Dynamic Time Warping (uDTW) distance and
-penalty between sequences.
-
-Pairwise alignment costs are weighted by the combined uncertainty of the
-corresponding time steps. The distance is computed using a differentiable
-soft minimum over alignment paths, while the penalty is accumulated using
-the same soft alignment weights.
-
-The module returns the distance and penalty separately for each sequence
-pair.
+Computes the uncertainty-aware Dynamic Time Warping (uDTW) distance and
+penalty between sequences. Pairwise alignment costs are weighted by the
+combined uncertainty of the two time steps, and the penalty is aggregated
+along the alignment paths using the same soft alignment weights.
 
 | argument | type | default | description |
 | --- | --- | --- | --- |
@@ -102,8 +96,8 @@ torchwarp.SoftDTW(gamma=1.0, normalize=False, bandwidth=None, dist_func=None, *,
                   backend="auto")
 ```
 
-Computes the Soft Dynamic Time Warping (soft-DTW) distance between
-sequences.
+Computes a differentiable Dynamic Time Warping (soft-DTW) distance
+between sequences, using a soft minimum over alignment paths.
 
 | argument | type | default | description |
 | --- | --- | --- | --- |
@@ -128,18 +122,18 @@ loss = sdtw(X, Y).mean()
 torchwarp.JEANIE(gamma=0.1, max_shift=1, metric="euclidean", *, backend="auto")
 ```
 
-Computes the JEANIE distance between each query and support pair from
-their features. JEANIE aligns a query seen from K simulated
-viewpoints with a support sequence. A path moves through cells
-(t, u, k): t and u move as in DTW and the viewpoint k may change by at
-most $\iota$ (`max_shift`) per step. The path may start and end at any
-viewpoint. The distance is the soft minimum of the path distances
-(Algorithm 1).
+Computes the JEANIE distance between query and support sequences, where
+the query is given under K matching configurations (for example,
+simulated viewpoints). Alignment paths move jointly through time and
+configuration: the time steps advance as in DTW, and the configuration
+may change by at most `max_shift` between consecutive steps. Paths may
+start and end at any configuration, and the distance is the soft minimum
+over all paths.
 
 | argument | type | default | description |
 | --- | --- | --- | --- |
 | `gamma` | float | `0.1` | Soft minimum temperature $\gamma > 0$. |
-| `max_shift` | int or (int, int) | `1` | $\iota$-max shift. An int applies to every viewpoint axis; a pair `(azimuth, altitude)` sets the two axes of a two-axis query separately. Values above K - 1 behave like K - 1. |
+| `max_shift` | int or (int, int) | `1` | Largest change of the viewpoint index between consecutive steps. An int applies to every viewpoint axis; a pair `(azimuth, altitude)` sets the two axes of a two-axis query separately. Values above K - 1 behave like K - 1. |
 | `metric` | str | `"euclidean"` | Base distance between blocks: `"euclidean"`, `"sqeuclidean"` or `"rbf"` (see `rbf_cost`, $\sigma = 0.5$). |
 | `backend` | str | `"auto"` | `"auto"`, `"cuda"` or `"torch"`. |
 
@@ -149,7 +143,7 @@ viewpoint. The distance is the soft minimum of the path distances
 | --- | --- | --- |
 | `query` | `[B, K, T, D]` or `[B, K1, K2, T, D]` | Query blocks for each simulated viewpoint (one or two viewpoint axes). |
 | `support` | `[B, U, D]` | Support blocks. |
-| `return_accumulator` | bool | Also return the accumulator R of Algorithm 1. |
+| `return_accumulator` | bool | Also return the dynamic programming accumulator R. |
 
 **Returns** `distance [B]`, or `(distance, R)` with R `[B, K, T, U]`
 (`[B, K1, K2, T, U]` for two axes). R is differentiable.
@@ -166,12 +160,16 @@ dist, R = jeanie(query, support, return_accumulator=True)
 torchwarp.FVM(gamma=0.1, metric="euclidean", *, backend="auto")
 ```
 
-Computes Free Viewpoint Matching (FVM) between sequences.
+Computes Free Viewpoint Matching (FVM) between sequences. Candidate
+matching costs are reduced using a soft minimum at each pair of time
+steps, followed by soft-DTW over the resulting cost matrix. Matching
+configurations can change freely without transition constraints.
 
-At each pair of time steps, FVM reduces candidate matching costs using a
-soft minimum before applying soft-DTW to the resulting cost matrix.
-Matching configurations can change freely between time steps without
-transition constraints. Arguments as in `JEANIE` (without `max_shift`).
+| argument | type | default | description |
+| --- | --- | --- | --- |
+| `gamma` | float | `0.1` | Soft minimum temperature $\gamma > 0$, used for both reductions. |
+| `metric` | str | `"euclidean"` | Base distance between blocks: `"euclidean"`, `"sqeuclidean"` or `"rbf"` (see `rbf_cost`, $\sigma = 0.5$). |
+| `backend` | str | `"auto"` | `"auto"`, `"cuda"` or `"torch"`. |
 
 **forward**`(query, support)`
 
@@ -211,8 +209,7 @@ TF.udtw_from_cost(cost, penalty, *, gamma=1.0, bandwidth=None, backend="auto")
 ```
 
 Runs the uDTW dynamic program on matrices you build yourself, for
-example with another base distance or another variance model (such as
-the jointly generated variance of Eq. 9).
+example with another base distance or another variance model.
 
 | argument | shape | description |
 | --- | --- | --- |
