@@ -52,14 +52,16 @@ torchwarp.UDTW(gamma=1.0, beta=1.0, normalize=False, bandwidth=None, *,
                method="gemm", backend="auto")
 ```
 
-`torch.nn.Module` computing the uDTW distance and penalty of each pair
-of sequences. For time step i of X and j of Y, with uncertainties
-$\sigma_i$ and $\sigma_j'$, uDTW uses the variance
-$\Sigma_{ij} = \frac{1}{2} (\sigma_i^2 + \sigma_j'^2)$ (Eq. 8), the cost
-$\lVert x_i - y_j \rVert^2 / \Sigma_{ij}$ and the penalty $\beta \log \Sigma_{ij}$
-(Eq. 16). The distance is the soft minimum of the path costs (Eq. 2);
-the penalty $\Omega$ is the sum of the penalty along the
-paths, weighted by the same soft selection (Eq. 3).
+`torch.nn.Module` computing the uncertainty-aware Dynamic Time Warping
+(uDTW) distance and penalty between sequences.
+
+Pairwise alignment costs are weighted by the combined uncertainty of the
+corresponding time steps. The distance is computed using a differentiable
+soft minimum over alignment paths, while the penalty is accumulated using
+the same soft alignment weights.
+
+The module returns the distance and penalty separately for each sequence
+pair.
 
 | argument | type | default | description |
 | --- | --- | --- | --- |

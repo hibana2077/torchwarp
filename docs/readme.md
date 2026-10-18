@@ -5,11 +5,11 @@ torchwarp is an accelerated PyTorch implementation of uncertainty-DTW and JEANIE
 | page | contents |
 | --- | --- |
 | [Installation](installation.md) | requirements, pip / uv, the CUDA extensions, environment variables, troubleshooting |
-| [Usage](usage.md) | uDTW, JEANIE, FVM and soft-DTW step by step, custom distances, viewpoint simulation, visualization |
-| [API reference](api.md) | every public function and class: arguments, shapes, return values, errors |
-| [Benchmarks](benchmarks.md) | speed against the official code, the ECG5000 and NW-UCLA experiments and how to run them |
+| [Usage](usage.md) | uDTW, JEANIE, FVM and soft-DTW step by step, custom distances (e.g. cosine) |
+| [API reference](api.md) | Public APIs, including parameter types, defaults, valid ranges, tensor shapes, return values, and exceptions. |
+| [Example](example.md) | The time-series prediction task and few-shot action recognition |
 
-## Terms used in these pages
+## Terms used
 
 * **Sequence**: an ordered list of feature vectors, stored as a tensor
   `[length, features]` (with a batch: `[batch, length, features]`). A
@@ -28,9 +28,6 @@ torchwarp is an accelerated PyTorch implementation of uncertainty-DTW and JEANIE
   $\mathrm{SoftMin}_{\gamma}(w) = -\gamma \log \sum_i \exp(-w_i / \gamma)$. soft-DTW,
   uDTW and JEANIE are soft minima over path distances; $\gamma > 0$
   controls how soft it is. As $\gamma$ goes to 0 it becomes the hard minimum (DTW).
-* **Viewpoint** (JEANIE, FVM): the query skeleton sequence is rotated to
-  K simulated camera viewpoints before it is encoded, which adds a
-  viewpoint axis: `[views, length, features]`.
 
 ## Package layout
 
@@ -39,7 +36,7 @@ torchwarp is an accelerated PyTorch implementation of uncertainty-DTW and JEANIE
 | `torchwarp` | the modules `UDTW`, `SoftDTW`, `JEANIE`, `FVM` and the base distances |
 | `torchwarp.functional` | one function per module (`udtw`, `soft_dtw`, `jeanie`, `fvm`) and `*_from_cost` variants on a precomputed cost |
 | `torchwarp.paths` | path matrices and optimal paths for visualization |
-| `torchwarp.plot` | matplotlib figures of the paths |
+| `torchwarp.plot` | matplotlib figures of the paths, |
 
 ## Common behaviour
 
