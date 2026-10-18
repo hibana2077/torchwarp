@@ -8,9 +8,9 @@ Shapes use these letters:
 | letter | meaning |
 | --- | --- |
 | `B` | batch size (number of sequence pairs) |
-| `N`, `M` | lengths of the two sequences compared by uDTW |
-| `T`, `U` | lengths of the query and the support sequence (JEANIE, FVM, soft-DTW) |
-| `K` | number of query viewpoints (`K1`, `K2` for two viewpoint axes; `K'` for support viewpoints in FVM) |
+| `N`, `M` | lengths of the two sequences (uDTW, soft-DTW) |
+| `T`, `U` | lengths of the query and the support sequence (JEANIE, FVM) |
+| `K` | number of matching configurations, for example viewpoints (`K1`, `K2` for two configuration axes; `K'` for support configurations in FVM) |
 | `D` | feature dimension |
 
 The API follows `torch.nn`: each method is a module in `torchwarp`
@@ -55,15 +55,16 @@ torchwarp.UDTW(gamma=1.0, beta=1.0, normalize=False, bandwidth=None, *,
 Computes the uncertainty-aware Dynamic Time Warping (uDTW) distance and
 penalty between sequences. Pairwise alignment costs are weighted by the
 combined uncertainty of the two time steps, and the penalty is aggregated
-along the alignment paths using the same soft alignment weights.
+along the alignment paths using the same soft alignment weights. The
+returned penalty is already multiplied by `beta`.
 
 | argument | type | default | description |
 | --- | --- | --- | --- |
 | `gamma` | float | `1.0` | Soft minimum temperature $\gamma > 0$. |
 | `beta` | float | `1.0` | Penalty weight $\beta \geq 0$. |
-| `normalize` | bool | `False` | If `True`, return $d(X, Y) - \frac{1}{2} \left[ d(X, X) + d(Y, Y) \right]$ for both the distance and the penalty. |
+| `normalize` | bool | `False` | If `True`, subtract the self-alignment terms from each output separately: distance $d(X, Y) - \frac{1}{2} \left[ d(X, X) + d(Y, Y) \right]$, and penalty $\beta\Omega(X, Y) - \frac{1}{2} \left[ \beta\Omega(X, X) + \beta\Omega(Y, Y) \right]$. |
 | `bandwidth` | float or None | `None` | Sakoe-Chiba band: only cells with $\lvert i - j \rvert \leq$ `bandwidth` are used. `None` or `0` uses all cells. |
-| `method` | str | `"gemm"` | `"gemm"` builds the cost inside the fused kernel without storing `[B, N, M]` matrices; `"diff"` builds the matrices with `pairwise_matrices` first. Same result. |
+| `method` | str | `"gemm"` | `"gemm"` builds the cost inside the fused kernel without storing `[B, N, M]` matrices; `"diff"` builds the matrices with `pairwise_matrices` first. Mathematically equivalent; floating-point results may differ slightly. |
 | `backend` | str | `"auto"` | `"auto"`, `"cuda"` or `"torch"`. |
 
 **forward**`(X, Y, sigma_x, sigma_y)`
@@ -76,8 +77,8 @@ along the alignment paths using the same soft alignment weights.
 | `sigma_y` | `[B, M, 1]` | Uncertainty $\sigma'$ of each time step of `Y`. |
 
 **Returns** `UDTWOutput(distance, penalty)`, a named tuple of two `[B]`
-tensors: the uDTW distance and the penalty $\beta\Omega$ of each pair
-(X[b], Y[b]). `d, omega = udtw(...)` and `out.distance` both work.
+tensors: the uDTW distance and the weighted penalty $\beta\Omega$ of each
+pair (X[b], Y[b]). Do not multiply the penalty by `beta` again. `d, omega = udtw(...)` and `out.distance` both work.
 
 **Raises** `ValueError` for wrong shapes, $\gamma \leq 0$, $\beta < 0$,
 $\mathrm{bandwidth} < 0$, or a band so narrow that no path reaches the last cell;
@@ -208,8 +209,9 @@ $\Sigma$. **Returns** `UDTWOutput(distance [B], penalty [B])`.
 TF.udtw_from_cost(cost, penalty, *, gamma=1.0, bandwidth=None, backend="auto")
 ```
 
-Runs the uDTW dynamic program on matrices you build yourself, for
-example with another base distance or another variance model.
+Computes uDTW from precomputed pairwise cost and penalty matrices. Use
+it for custom distance functions or uncertainty models instead of the
+default pairwise cost.
 
 | argument | shape | description |
 | --- | --- | --- |
@@ -234,7 +236,9 @@ d, omega = TF.udtw_from_cost((1 - cos) / Sigma, penalty, gamma=1.0)
 TF.pairwise_matrices(X, Y, sigma_x, sigma_y, beta=1.0, eps=1e-8, *, method="gemm")
 ```
 
-Builds the default uDTW matrices.
+Builds the default uDTW matrices from the same inputs as
+[`UDTW.forward`](#udtw): `X [B, N, D]`, `Y [B, M, D]`,
+`sigma_x [B, N, 1]`, `sigma_y [B, M, 1]`.
 
 **Returns** `(cost, penalty, Sigma)`, each `[B, N, M]`:
 $\mathrm{cost} _{ij} = \lVert x _i - y _j \rVert^2 / \Sigma _{ij}$,
@@ -258,7 +262,7 @@ Functional form of [`SoftDTW`](#softdtw). **Returns** `[B]`.
 TF.soft_dtw_from_cost(cost, *, gamma=1.0, bandwidth=None, backend="auto")
 ```
 
-soft-DTW of a cost `[B, T, U]`. **Returns** `[B]`.
+soft-DTW of a precomputed cost `[B, N, M]`. **Returns** `[B]`.
 
 ### `TF.jeanie`
 
@@ -300,11 +304,13 @@ Functional form of [`FVM`](#fvm). **Returns** `[B]`.
 TF.fvm_from_cost(cost, *, gamma=0.1, backend="auto")
 ```
 
-FVM on a precomputed cost `[B, K..., T, U]`: every dimension between the
-batch dimension and `[T, U]` is a viewpoint axis reduced by the soft
-minimum, for example `[B, K, T, U]` (query viewpoints),
-`[B, K1, K2, T, U]` (two query axes) or `[B, K, K', T, U]` (query and
-support viewpoints). **Returns** `[B]`.
+Computes FVM from a precomputed cost of shape `[B, K..., T, U]`. All
+dimensions between the batch and temporal dimensions are reduced using a
+soft minimum before soft-DTW is applied; they can represent viewpoints,
+transformations or other matching configurations. For example
+`[B, K, T, U]` (query configurations), `[B, K1, K2, T, U]` (two query
+axes) or `[B, K, K', T, U]` (query and support configurations).
+**Returns** `[B]`.
 
 ```python
 D = TF.euclidean_cost(query, support)   # [B, K, T, U]
@@ -318,6 +324,7 @@ TF.softmin(x, gamma, dim=None)
 ```
 
 $-\gamma \log \sum \exp(-x / \gamma)$ over `dim` (over all elements when `dim=None`).
+**Returns** `x` with `dim` removed, or a scalar when `dim=None`.
 
 ### `TF.softmin_weights`
 
