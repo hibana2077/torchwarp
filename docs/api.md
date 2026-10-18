@@ -466,7 +466,7 @@ Paths with the smallest distance for `cost [B, N, M]` (cells `(i, j)`) or
 
 ## `torchwarp.plot`
 
-Needs matplotlib (`pip install torchwarp[plot]`); `import torchwarp`
+Needs matplotlib (`pip install -e ".[plot]"`); `import torchwarp`
 does not load it. The panel functions draw
 into a given matplotlib axis (or the current one) and return it; the
 figure functions create and return a `matplotlib.figure.Figure`.

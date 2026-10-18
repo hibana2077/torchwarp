@@ -6,8 +6,8 @@ torchwarp is an accelerated PyTorch implementation of uncertainty-DTW and JEANIE
 | --- | --- |
 | [Installation](installation.md) | requirements, pip / uv, the CUDA extensions, environment variables, troubleshooting |
 | [Usage](usage.md) | uDTW, JEANIE, FVM and soft-DTW step by step, custom distances (e.g. cosine) |
+| [Examples](usage.md#examples) | Time series forecasting and few-shot action recognition: training scripts, setups, results and speed |
 | [API reference](api.md) | Public APIs, including parameter types, defaults, valid ranges, tensor shapes, return values, and exceptions. |
-| [Example](example.md) | The time-series prediction task and few-shot action recognition |
 
 ## Terms used
 
@@ -36,7 +36,7 @@ torchwarp is an accelerated PyTorch implementation of uncertainty-DTW and JEANIE
 | `torchwarp` | the modules `UDTW`, `SoftDTW`, `JEANIE`, `FVM` and the base distances |
 | `torchwarp.functional` | one function per module (`udtw`, `soft_dtw`, `jeanie`, `fvm`) and `*_from_cost` variants on a precomputed cost |
 | `torchwarp.paths` | path matrices and optimal paths for visualization |
-| `torchwarp.plot` | matplotlib figures of the paths, |
+| `torchwarp.plot` | matplotlib figures of the paths |
 
 ## Common behaviour
 

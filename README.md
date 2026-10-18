@@ -16,8 +16,8 @@ This repository provides implementations of uDTW, JEANIE, and FVM; with usage ex
 
 - [Installation](docs/installation.md): CUDA, uv, and optional dependencies.
 - [Usage](docs/usage.md): step-by-step usage of uDTW, JEANIE, FVM and soft-DTW.
+- [Examples](docs/usage.md#examples): training scripts, experimental setups and results.
 - [API reference](docs/api.md): arguments, shapes and return values.
-- [Benchmarks](docs/benchmarks.md): experimental setups and results.
 
 ## Installation
 
@@ -64,9 +64,8 @@ where:
 - `N`, `M` = lengths of the two sequences
 - `D` = feature dimension
 
-`sigma_x` and `sigma_y` are the uncertainties $\sigma > 0$ of each time step; in
-practice they are predicted from the features by a small network
-(SigmaNet in the paper). `d` is the uDTW distance and `omega` the
+`sigma_x` and `sigma_y` are positive per-element standard deviations
+$\sigma > 0$, which can be provided directly or predicted by a model. `d` is the uDTW distance and `omega` the
 uncertainty penalty $\beta\,\Omega$, one value per pair (shape `[B]`); the training
 loss adds the two. For `normalize=True`, custom base distances and
 `torchwarp.functional.udtw_from_cost`, see the [usage guide](docs/usage.md).
@@ -79,8 +78,8 @@ import torchwarp
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
-# query: [B, K, T, D]
-# support: [B, U, D]
+# query: [B, K, N, D]
+# support: [B, M, D]
 query = torch.randn(4, 5, 7, 64, device=device, requires_grad=True)
 support = torch.randn(4, 7, 64, device=device, requires_grad=True)
 
@@ -91,13 +90,15 @@ d.mean().backward()
 
 where:
 
-- `K` = number of query viewpoints
-- `T` = number of query temporal blocks
-- `U` = number of support temporal blocks
+- `K` = number of matching configurations of the query (here, viewpoints)
+- `N`, `M` = lengths of the query and support sequences
 - `D` = feature dimension
 
-The features are encoded temporal blocks of 3D skeleton sequences; the
-query is rotated to `K` simulated camera viewpoints before encoding.
+JEANIE aligns the two sequences while limiting how much the query's
+configuration may change between consecutive steps (`max_shift`). In
+this example the sequence elements are encoded temporal blocks of 3D
+skeleton sequences, and the query is rotated to `K` simulated camera
+viewpoints before encoding.
 
 The same call in functional form:
 
@@ -123,7 +124,7 @@ precomputed cost tensor:
 ```python
 import torchwarp.functional as TF
 
-cost = TF.euclidean_cost(query, support)   # [B, K, T, U]
+cost = TF.euclidean_cost(query, support)   # [B, K, N, M]
 d = TF.fvm_from_cost(cost, gamma=0.1)
 ```
 
@@ -177,7 +178,7 @@ the two on the same device.
 | uDTW | NW-UCLA | 40.4 | 21.4 | 1.9× | 86.2 | 7.06 | 12× |
 | uDTW | ECG5000 | 1006.9 | 88.6 | 11× | 1856.0 | 2.18 | 852× |
 
-Hardware, software versions, timing method and experimental settings are in [benchmarks](docs/benchmarks.md).
+Hardware, software versions, timing method and experimental settings are in the [examples](docs/usage.md#examples).
 
 ### Qualitative results
 
