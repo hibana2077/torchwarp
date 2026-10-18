@@ -52,8 +52,8 @@ torchwarp.UDTW(gamma=1.0, beta=1.0, normalize=False, bandwidth=None, *,
                method="gemm", backend="auto")
 ```
 
-`torch.nn.Module` computing the uncertainty-aware Dynamic Time Warping
-(uDTW) distance and penalty between sequences.
+Computes the uncertainty-aware Dynamic Time Warping (uDTW) distance and
+penalty between sequences.
 
 Pairwise alignment costs are weighted by the combined uncertainty of the
 corresponding time steps. The distance is computed using a differentiable
@@ -102,7 +102,8 @@ torchwarp.SoftDTW(gamma=1.0, normalize=False, bandwidth=None, dist_func=None, *,
                   backend="auto")
 ```
 
-`torch.nn.Module` computing soft-DTW of each pair of sequences.
+Computes the Soft Dynamic Time Warping (soft-DTW) distance between
+sequences.
 
 | argument | type | default | description |
 | --- | --- | --- | --- |
@@ -127,8 +128,8 @@ loss = sdtw(X, Y).mean()
 torchwarp.JEANIE(gamma=0.1, max_shift=1, metric="euclidean", *, backend="auto")
 ```
 
-`torch.nn.Module` computing the JEANIE distance of each query and support
-pair from their features. JEANIE aligns a query seen from K simulated
+Computes the JEANIE distance between each query and support pair from
+their features. JEANIE aligns a query seen from K simulated
 viewpoints with a support sequence. A path moves through cells
 (t, u, k): t and u move as in DTW and the viewpoint k may change by at
 most $\iota$ (`max_shift`) per step. The path may start and end at any
@@ -165,11 +166,12 @@ dist, R = jeanie(query, support, return_accumulator=True)
 torchwarp.FVM(gamma=0.1, metric="euclidean", *, backend="auto")
 ```
 
-`torch.nn.Module` computing Free Viewpoint Matching: at every cell
-(t, u), the soft minimum of the base distance over the viewpoints, then
-soft-DTW on the result (JEANIE Eq. 13). With one query viewpoint axis it
-equals JEANIE with `max_shift = K - 1`. Arguments as in `JEANIE`
-(without `max_shift`).
+Computes Free Viewpoint Matching (FVM) between sequences.
+
+At each pair of time steps, FVM reduces candidate matching costs using a
+soft minimum before applying soft-DTW to the resulting cost matrix.
+Matching configurations can change freely between time steps without
+transition constraints. Arguments as in `JEANIE` (without `max_shift`).
 
 **forward**`(query, support)`
 
