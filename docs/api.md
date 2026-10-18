@@ -8,8 +8,7 @@ Shapes use these letters:
 | letter | meaning |
 | --- | --- |
 | `B` | batch size (number of sequence pairs) |
-| `N`, `M` | lengths of the two sequences (uDTW, soft-DTW) |
-| `T`, `U` | lengths of the query and the support sequence (JEANIE, FVM) |
+| `N`, `M` | lengths of the two sequences (for JEANIE and FVM, the query and the support) |
 | `K` | number of matching configurations, for example viewpoints (`K1`, `K2` for two configuration axes; `K'` for support configurations in FVM) |
 | `D` | feature dimension |
 
@@ -138,12 +137,12 @@ over all paths.
 
 | argument | shape | description |
 | --- | --- | --- |
-| `query` | `[B, K, T, D]` or `[B, K1, K2, T, D]` | Query blocks for each simulated viewpoint (one or two viewpoint axes). |
-| `support` | `[B, U, D]` | Support blocks. |
+| `query` | `[B, K, N, D]` or `[B, K1, K2, N, D]` | Query blocks for each simulated viewpoint (one or two viewpoint axes). |
+| `support` | `[B, M, D]` | Support blocks. |
 | `return_accumulator` | bool | Also return the dynamic programming accumulator R. |
 
-**Returns** `distance [B]`, or `(distance, R)` with R `[B, K, T, U]`
-(`[B, K1, K2, T, U]` for two axes). R is differentiable.
+**Returns** `distance [B]`, or `(distance, R)` with R `[B, K, N, M]`
+(`[B, K1, K2, N, M]` for two axes). R is differentiable.
 
 ```python
 jeanie = torchwarp.JEANIE(gamma=0.1, max_shift=1)
@@ -172,8 +171,8 @@ configurations can change freely without transition constraints.
 
 | argument | shape | description |
 | --- | --- | --- |
-| `query` | `[B, K, T, D]`, or more viewpoint axes `[B, K1, K2, T, D]` | Query blocks for each simulated viewpoint. |
-| `support` | `[B, U, D]`, or `[B, K', U, D]` with its own viewpoints | Support blocks. All query and support viewpoint pairs are reduced. |
+| `query` | `[B, K, N, D]`, or more viewpoint axes `[B, K1, K2, N, D]` | Query blocks for each simulated viewpoint. |
+| `support` | `[B, M, D]`, or `[B, K', M, D]` with its own viewpoints | Support blocks. All query and support viewpoint pairs are reduced. |
 
 **Returns** `distance [B]`.
 
@@ -281,7 +280,7 @@ JEANIE on a precomputed base distance tensor.
 
 | argument | shape | description |
 | --- | --- | --- |
-| `cost` | `[B, K, T, U]` or `[B, K1, K2, T, U]` | Base distance between query block t at viewpoint k and support block u, for example `euclidean_cost(query, support)`. |
+| `cost` | `[B, K, N, M]` or `[B, K1, K2, N, M]` | Base distance between query element i at configuration k and support element j, for example `euclidean_cost(query, support)`. |
 
 **Returns** `distance [B]`; with `return_accumulator=True`,
 `(distance, R)` with R of the same shape as `cost`.
@@ -300,16 +299,16 @@ Functional form of [`FVM`](#fvm). **Returns** `[B]`.
 TF.fvm_from_cost(cost, *, gamma=0.1, backend="auto")
 ```
 
-Computes FVM from a precomputed cost of shape `[B, K..., T, U]`. All
+Computes FVM from a precomputed cost of shape `[B, K..., N, M]`. All
 dimensions between the batch and temporal dimensions are reduced using a
 soft minimum before soft-DTW is applied; they can represent viewpoints,
 transformations or other matching configurations. For example
-`[B, K, T, U]` (query configurations), `[B, K1, K2, T, U]` (two query
-axes) or `[B, K, K', T, U]` (query and support configurations).
+`[B, K, N, M]` (query configurations), `[B, K1, K2, N, M]` (two query
+axes) or `[B, K, K', N, M]` (query and support configurations).
 **Returns** `[B]`.
 
 ```python
-D = TF.euclidean_cost(query, support)   # [B, K, T, U]
+D = TF.euclidean_cost(query, support)   # [B, K, N, M]
 d_fvm = TF.fvm_from_cost(D, gamma=0.1)
 ```
 
@@ -337,12 +336,12 @@ The weights of the soft minimum, $\mathrm{softmax}(-\mathrm{values} / \gamma)$ o
 Available as `torchwarp.<name>` and `TF.<name>`. All three accept two
 layouts:
 
-* JEANIE / FVM: `query [B, K, T, D]` and `support [B, U, D]` return
-  `[B, K, T, U]`.
+* JEANIE / FVM: `query [B, K, N, D]` and `support [B, M, D]` return
+  `[B, K, N, M]`.
 * Two sequences of the same rank, as for uDTW and soft-DTW:
   `x [B, N, D]` and `y [B, M, D]` return `[B, N, M]`. Leading dimensions
   broadcast, so `query[:, :, None]` and `support[:, None]` with
-  viewpoints give `[B, K, K', T, U]`.
+  viewpoints give `[B, K, K', N, M]`.
 
 ### `euclidean_cost`
 
@@ -368,7 +367,7 @@ torchwarp.rbf_cost(query, support, sigma=0.5)
 ```
 
 $\sum_d \left[ 2 - 2 \exp\left(-\sigma (q_d - s_d)^2\right) \right]$. Stores the
-`[B, K, T, U, D]` difference tensor, so it uses more memory than the
+`[B, K, N, M, D]` difference tensor, so it uses more memory than the
 Euclidean distances.
 
 ---
@@ -385,10 +384,10 @@ dimension).
 | attribute | shape | description |
 | --- | --- | --- |
 | `distance` | `[B]` | The distance. |
-| `path_matrix` | `[B, T, U]` or `[B, K, T, U]` | $\mathrm{SoftMin}_{\gamma}$-selection of the path matrices: $\sum_i \mathrm{softmax}(-w / \gamma)_i \Pi_i$, over all paths $\Pi_i$ with path distances $w_i$. Equal to the gradient of `distance` with respect to `cost`. |
-| `optimal_path` | list of lists | Per pair, the cells `(t, u)` (or `(t, u, k)`) of the path with the smallest distance, from `(0, 0)` to `(T - 1, U - 1)`. |
-| `cost` | `[B, T, U]` or `[B, K, T, U]` | The cost matrix the paths are computed on (for uDTW, $D / \Sigma$). |
-| `Sigma` | `[B, T, U]` | Variances $\Sigma$ (uDTW only, otherwise `None`). |
+| `path_matrix` | `[B, N, M]` or `[B, K, N, M]` | $\mathrm{SoftMin}_{\gamma}$-selection of the path matrices: $\sum_i \mathrm{softmax}(-w / \gamma)_i \Pi_i$, over all paths $\Pi_i$ with path distances $w_i$. Equal to the gradient of `distance` with respect to `cost`. |
+| `optimal_path` | list of lists | Per pair, the cells `(i, j)` (or `(i, j, k)`) of the path with the smallest distance, from `(0, 0)` to `(N - 1, M - 1)`. |
+| `cost` | `[B, N, M]` or `[B, K, N, M]` | The cost matrix the paths are computed on (for uDTW, $D / \Sigma$). |
+| `Sigma` | `[B, N, M]` | Variances $\Sigma$ (uDTW only, otherwise `None`). |
 | `Omega` | `[B]` | Penalty $\beta\Omega$ (uDTW only, otherwise `None`). |
 | `angles` | list | Viewpoint labels, if given. |
 
@@ -420,7 +419,7 @@ uDTW paths for `X [B, N, D]`, `Y [B, M, D]`, `sigma_x [B, N, 1]`,
 torchwarp.paths.soft_dtw(cost, *, gamma=0.1)
 ```
 
-soft-DTW paths for a cost matrix `[B, T, U]`.
+soft-DTW paths for a cost matrix `[B, N, M]`.
 
 ### `paths.soft_dtw_per_view`
 
@@ -430,8 +429,8 @@ torchwarp.paths.soft_dtw_per_view(query, support, *, gamma=0.1, metric="euclidea
 ```
 
 soft-DTW applied to each query viewpoint separately. `query` is
-`[B, K, T, D]`, `support` is `[B, U, D]`.
-**Returns** a list of K `Alignment`s with cells `(t, u, k)`.
+`[B, K, N, D]`, `support` is `[B, M, D]`.
+**Returns** a list of K `Alignment`s with cells `(i, j, k)`.
 
 ### `paths.fvm`
 
@@ -457,8 +456,8 @@ the paths to start at that viewpoint.
 torchwarp.paths.optimal_path(cost, *, max_shift=0, start_view=None)
 ```
 
-Paths with the smallest distance for `cost [B, T, U]` (cells `(t, u)`) or
-`cost [B, K, T, U]` (cells `(t, u, k)`, viewpoint change at most
+Paths with the smallest distance for `cost [B, N, M]` (cells `(i, j)`) or
+`cost [B, K, N, M]` (cells `(i, j, k)`, viewpoint change at most
 `max_shift` per step).
 
 ---
@@ -502,11 +501,11 @@ each starting viewpoint.
 
 | argument | description |
 | --- | --- |
-| `query`, `support` | `[B, K, T, D]` / `[B, U, D]`. |
+| `query`, `support` | `[B, K, N, D]` / `[B, M, D]`. |
 | `angles` | One label (degrees) per query viewpoint. |
 | `max_shift` | An int, or a sequence of ints for one JEANIE panel each. |
 | `soft_dtw_gamma`, `fvm_gamma`, `jeanie_gamma` | Per-method $\gamma$ (default `gamma`). |
-| `query_poses`, `support_poses`, `bones` | Optional skeletons: `[K, T, J, 2]` and `[U, J, 2]` 2D joint positions and a list of joint index pairs. |
+| `query_poses`, `support_poses`, `bones` | Optional skeletons: `[K, N, J, 2]` and `[M, J, 2]` 2D joint positions and a list of joint index pairs. |
 | `pose_step` | Draw a skeleton every `pose_step` time steps. |
 | `axes`, `titles` | Existing 3D axes (one per panel) and panel captions. |
 
