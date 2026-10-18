@@ -30,9 +30,11 @@ import torch
 import torch.nn as nn
 import torchwarp
 
+device = "cuda" if torch.cuda.is_available() else "cpu"
+
 # two batches of sequences: [batch, length, features]
-X = torch.randn(16, 30, 8, device="cuda", requires_grad=True)
-Y = torch.randn(16, 40, 8, device="cuda")
+X = torch.randn(16, 30, 8, device=device, requires_grad=True)
+Y = torch.randn(16, 40, 8, device=device)
 
 # SigmaNet: one uncertainty sigma per time step, [batch, length, 1]
 sigma_net = nn.Sequential(
@@ -40,7 +42,7 @@ sigma_net = nn.Sequential(
     nn.ReLU(),
     nn.Linear(32, 1),
     nn.Softplus(),
-).cuda()
+).to(device)
 # sigma must be positive: Softplus plus a floor of 0.5
 sx = sigma_net(X) + 0.5
 sy = sigma_net(Y) + 0.5
@@ -61,13 +63,20 @@ penalty and $\Sigma$, and the cost is replaced by the cosine distance
 $d(x_i, y_j) = 1 - \cos(x_i, y_j)$:
 
 ```python
+import torch
+import torch.nn.functional as F
 import torchwarp.functional as TF
+
+X = torch.randn(16, 30, 8)
+Y = torch.randn(16, 40, 8)
+sx = torch.rand(16, 30, 1) + 0.5   # sigma > 0, [batch, N, 1]
+sy = torch.rand(16, 40, 1) + 0.5   # [batch, M, 1]
 
 # default matrices, each [batch, N, M]
 cost, penalty, Sigma = TF.pairwise_matrices(X, Y, sx, sy, beta=1.0)
 
 # cosine distance between time steps instead of the squared Euclidean one
-cos = nn.functional.cosine_similarity(X.unsqueeze(2), Y.unsqueeze(1), dim=-1)
+cos = F.cosine_similarity(X.unsqueeze(2), Y.unsqueeze(1), dim=-1)
 d, omega = TF.udtw_from_cost((1 - cos) / Sigma, penalty, gamma=1.0)
 ```
 
@@ -88,6 +97,10 @@ layer:
 
 ```python
 import math
+
+import torch
+import torch.nn as nn
+import torchwarp
 
 # simulated camera viewpoints (degrees about the vertical axis)
 angles = [-60, -30, 0, 30, 60]
@@ -129,20 +142,34 @@ JEANIE distance of each query and support pair. `max_shift` is the
 largest change of the viewpoint index from one step of the path to the
 next.
 
-The dynamic programming accumulator R, `[batch, views, blocks_q,
-blocks_s]`, is returned with:
+The remaining examples of this section use random tensors in place of
+the encoded blocks, with the same shapes: 5 viewpoints, 7 blocks, 64
+features.
+
+The dynamic programming accumulator R is returned with
+`return_accumulator=True`:
 
 ```python
-# R: [batch, views, blocks_q, blocks_s]
-dist, R = jeanie(query, support, return_accumulator=True)
+import torch
+import torchwarp
+
+query = torch.randn(1, 5, 7, 64)    # [batch, views, blocks_q, features]
+support = torch.randn(1, 7, 64)     # [batch, blocks_s, features]
+
+jeanie = torchwarp.JEANIE(gamma=0.1, max_shift=1)
+dist, R = jeanie(query, support, return_accumulator=True)   # R: [batch, views, blocks_q, blocks_s]
 ```
 
-With two viewpoint axes (azimuth and altitude) the query is
-`[batch, views_az, views_alt, blocks, features]`; an int `max_shift`
-applies to both axes and a pair sets them separately. FVM lets the
-viewpoint change freely at every step and takes the same inputs:
+FVM lets the viewpoint change freely at every step and takes the same
+inputs:
 
 ```python
+import torch
+import torchwarp
+
+query = torch.randn(1, 5, 7, 64)    # [batch, views, blocks_q, features]
+support = torch.randn(1, 7, 64)     # [batch, blocks_s, features]
+
 fvm = torchwarp.FVM(gamma=0.1)
 d_fvm = fvm(query, support)   # [batch]
 ```
@@ -154,8 +181,29 @@ In an N-way 1-shot episode every query is compared with every support
 prediction. The negative distances are the logits for training:
 
 ```python
+import math
+
+import torch
+import torch.nn as nn
+import torchwarp
+
+device = "cuda" if torch.cuda.is_available() else "cpu"
+angles = [-60, -30, 0, 30, 60]
+
+
+def rotate(skeleton, degrees):
+    a = math.radians(degrees)
+    R = torch.tensor([[math.cos(a), 0.0, math.sin(a)],
+                      [0.0, 1.0, 0.0],
+                      [-math.sin(a), 0.0, math.cos(a)]])
+    return skeleton @ R.T
+
+
+def blocks(skeleton, size=8, stride=4):
+    return skeleton.unfold(0, size, stride).flatten(1)
+
+
 n_way, n_query = 5, 3
-device = "cuda"
 encoder = nn.Sequential(nn.Linear(8 * 20 * 3, 128), nn.ReLU(),
                         nn.Linear(128, 64)).to(device)
 jeanie = torchwarp.JEANIE(gamma=0.1, max_shift=1)
@@ -192,7 +240,13 @@ more, and `max_shift = K - 1` lets it move freely, which equals FVM. The
 distance can only decrease as `max_shift` grows:
 
 ```python
-for shift in range(len(angles)):
+import torch
+import torchwarp
+
+query = torch.randn(1, 5, 7, 64)    # K = 5 viewpoints
+support = torch.randn(1, 7, 64)
+
+for shift in range(query.shape[1]):
     d = torchwarp.JEANIE(gamma=0.1, max_shift=shift)(query, support)
     print("max_shift", shift, d.item())
 
@@ -205,6 +259,13 @@ print("FVM", torchwarp.FVM(gamma=0.1)(query, support).item())
 index of every step:
 
 ```python
+import torch
+import torchwarp
+
+angles = [-60, -30, 0, 30, 60]
+query = torch.randn(1, len(angles), 7, 64)
+support = torch.randn(1, 7, 64)
+
 a = torchwarp.paths.jeanie(query, support, gamma=0.1, max_shift=1)
 
 # cells (query block, support block, viewpoint index)
@@ -216,10 +277,26 @@ for i, j, k in a.optimal_path[0]:
 
 Rotating the query about the vertical axis (azimuth) and about the
 horizontal axis (altitude) gives a grid of viewpoints,
-`[views_az, views_alt, blocks, features]`. `max_shift` is then a pair:
+`[batch, views_az, views_alt, blocks, features]`. An int `max_shift`
+applies to both axes and a pair sets them separately:
 
 ```python
-def rotate_x(skeleton, degrees):
+import math
+
+import torch
+import torch.nn as nn
+import torchwarp
+
+
+def rotate_y(skeleton, degrees):   # azimuth
+    a = math.radians(degrees)
+    R = torch.tensor([[math.cos(a), 0.0, math.sin(a)],
+                      [0.0, 1.0, 0.0],
+                      [-math.sin(a), 0.0, math.cos(a)]])
+    return skeleton @ R.T
+
+
+def rotate_x(skeleton, degrees):   # altitude
     a = math.radians(degrees)
     R = torch.tensor([[1.0, 0.0, 0.0],
                       [0.0, math.cos(a), -math.sin(a)],
@@ -227,15 +304,22 @@ def rotate_x(skeleton, degrees):
     return skeleton @ R.T
 
 
+def blocks(skeleton, size=8, stride=4):
+    return skeleton.unfold(0, size, stride).flatten(1)
+
+
 azimuths = [-30, 0, 30]
 altitudes = [-15, 0, 15]
+query_skeleton = torch.randn(32, 20, 3)
+support_skeleton = torch.randn(32, 20, 3)
+encoder = nn.Linear(8 * 20 * 3, 64)
 
 # query_2d: [1, views_az, views_alt, blocks, features]
 query_2d = torch.stack([
-    torch.stack([encoder(blocks(rotate_x(rotate(query_skeleton, az), alt)).to(device))
+    torch.stack([encoder(blocks(rotate_x(rotate_y(query_skeleton, az), alt)))
                  for alt in altitudes])
     for az in azimuths]).unsqueeze(0)
-support_2d = encoder(blocks(support_skeleton).to(device)).unsqueeze(0)
+support_2d = encoder(blocks(support_skeleton)).unsqueeze(0)
 
 jeanie_2d = torchwarp.JEANIE(gamma=0.1, max_shift=(1, 1))
 dist_2d = jeanie_2d(query_2d, support_2d)
@@ -250,12 +334,20 @@ call `TF.jeanie_from_cost` (or `TF.fvm_from_cost`), here with the cosine
 distance:
 
 ```python
+import torch
+import torch.nn.functional as F
+import torchwarp
+import torchwarp.functional as TF
+
+query = torch.randn(1, 5, 7, 64)    # [1, views, blocks_q, features]
+support = torch.randn(1, 7, 64)     # [1, blocks_s, features]
+
 jeanie_sq = torchwarp.JEANIE(gamma=0.1, max_shift=1, metric="sqeuclidean")
 d_sq = jeanie_sq(query, support)
 
 # cosine distance between every query block (per view) and support block
-qn = nn.functional.normalize(query, dim=-1)                  # [1, views, blocks_q, features]
-sn = nn.functional.normalize(support, dim=-1)                # [1, blocks_s, features]
+qn = F.normalize(query, dim=-1)                              # [1, views, blocks_q, features]
+sn = F.normalize(support, dim=-1)                            # [1, blocks_s, features]
 D_cos = 1 - qn @ sn.transpose(-1, -2).unsqueeze(1)           # [1, views, blocks_q, blocks_s]
 d_cos = TF.jeanie_from_cost(D_cos, gamma=0.1, max_shift=1)
 ```
@@ -267,6 +359,9 @@ example to compare with the CUDA kernel), and float64 inputs are
 computed in float64, which `torch.autograd.gradcheck` needs:
 
 ```python
+import torch
+import torchwarp
+
 q64 = torch.randn(1, 3, 4, 5, dtype=torch.float64, requires_grad=True)
 s64 = torch.randn(1, 6, 5, dtype=torch.float64)
 
@@ -280,9 +375,14 @@ print(torch.autograd.gradcheck(lambda x: f(x, s64), (q64,)))
 $\mathrm{sDTW}(x, y) - \frac{1}{2} \left[ \mathrm{sDTW}(x, x) + \mathrm{sDTW}(y, y) \right]$.
 
 ```python
+import torch
+import torchwarp
+
+device = "cuda" if torch.cuda.is_available() else "cpu"
+
 # x, y: [batch, length, features]
-x = torch.randn(4, 30, 8, device="cuda")
-y = torch.randn(4, 40, 8, device="cuda")
+x = torch.randn(4, 30, 8, device=device)
+y = torch.randn(4, 40, 8, device=device)
 
 d_sdtw = torchwarp.SoftDTW(gamma=0.1)(x, y)                  # [batch]
 d_div = torchwarp.SoftDTW(gamma=0.1, normalize=True)(x, y)   # [batch]
@@ -292,8 +392,14 @@ In functional form, `TF.soft_dtw` takes the sequences and
 `TF.soft_dtw_from_cost` a precomputed base distance matrix `[B, N, M]`:
 
 ```python
+import torch
+import torchwarp.functional as TF
+
+x = torch.randn(4, 30, 8)
+y = torch.randn(4, 40, 8)
+
 d_sdtw = TF.soft_dtw(x, y, gamma=0.1)
-d_sdtw = TF.soft_dtw_from_cost(torchwarp.squared_euclidean_cost(x, y), gamma=0.1)
+d_sdtw = TF.soft_dtw_from_cost(TF.squared_euclidean_cost(x, y), gamma=0.1)
 ```
 
 ## Visualization
@@ -331,19 +437,36 @@ For viewpoint alignments (`paths.jeanie`, `paths.fvm`,
 **2. Figure functions**: complete multi-panel figures.
 
 ```python
+import torch
 from torchwarp import plot
+
+x = torch.sin(torch.linspace(0, 6.28, 40)).view(1, -1, 1)      # [B, N, 1]
+y = torch.sin(torch.linspace(0, 6.28, 50) - 0.8).view(1, -1, 1) # [B, M, 1]
+sx, sy = torch.full_like(x, 0.5), torch.full_like(y, 0.5)
+
+angles = [-60, -30, 0, 30, 60]
+query = torch.randn(1, len(angles), 7, 64)   # [B, K, N, D]
+support = torch.randn(1, 7, 64)              # [B, M, D]
 
 fig = plot.udtw_figure(x, y, sx, sy, gammas=(0.01, 0.1))  # sDTW and uDTW per gamma, uncertainty
 fig = plot.viewpoint_figure(query, support, angles, max_shift=(1, 2))  # soft-DTW, FVM, JEANIE
 ```
 
-`query` is `[B, K, N, D]`, `support` is `[B, M, D]` and `angles` holds one
-label per query viewpoint. To also draw skeletons, pass `query_poses`,
-`support_poses` and `bones`.
+`angles` holds one label per query viewpoint. To also draw skeletons,
+pass `query_poses`, `support_poses` and `bones`.
 
 **3. By hand**: the fields of `Alignment` are tensors and lists.
 
 ```python
+import torch
+import matplotlib.pyplot as plt
+from torchwarp import paths
+
+x = torch.sin(torch.linspace(0, 6.28, 40)).view(1, -1, 1)
+y = torch.sin(torch.linspace(0, 6.28, 50) - 0.8).view(1, -1, 1)
+sx, sy = torch.full_like(x, 0.5), torch.full_like(y, 0.5)
+a = paths.udtw(x, y, sx, sy, gamma=0.1)
+
 plt.imshow(a.path_matrix[0], origin="lower")
 i, j = zip(*a.optimal_path[0])
 plt.plot(j, i, "w-")
@@ -363,6 +486,15 @@ their path distances $w_i$. It is also the gradient
 of the distance with respect to the cost matrix:
 
 ```python
+import torch
+import torchwarp.functional as TF
+from torchwarp import paths
+
+x = torch.sin(torch.linspace(0, 6.28, 40)).view(1, -1, 1)
+y = torch.sin(torch.linspace(0, 6.28, 50) - 0.8).view(1, -1, 1)
+sx, sy = torch.full_like(x, 0.5), torch.full_like(y, 0.5)
+a = paths.udtw(x, y, sx, sy, gamma=0.1)
+
 with torch.no_grad():
     cost, penalty, Sigma = TF.pairwise_matrices(x, y, sx, sy)
 cost.requires_grad_(True)
@@ -370,7 +502,7 @@ cost.requires_grad_(True)
 d, omega = TF.udtw_from_cost(cost, penalty, gamma=0.1)
 d.sum().backward()
 
-cost.grad  # equals a.path_matrix
+print(torch.allclose(cost.grad, a.path_matrix, atol=1e-5))   # True
 ```
 
 ### Figures from trained models

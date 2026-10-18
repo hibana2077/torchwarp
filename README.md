@@ -30,6 +30,15 @@ torchwarp provides two backends: custom CUDA kernels (JIT-compiled on first use)
 
 For CUDA-specific PyTorch builds, uv installation, and optional dependencies, see the [installation guide](docs/installation.md).
 
+## Which method to use
+
+| method | use it when |
+| --- | --- |
+| `SoftDTW` | you need a general differentiable alignment of two sequences |
+| `UDTW` | you need uncertainty-aware alignment between two sequences |
+| `JEANIE` | you need to align multiple sequences over time, with constraints on transitions between sequences |
+| `FVM` | you need to align multiple sequences over time, without constraints on transitions between sequences |
+
 ## Example
 
 Like `torch.nn`, every method is a module (`torchwarp.UDTW`,
