@@ -13,14 +13,10 @@ Shapes use these letters:
 | `K` | number of matching configurations, for example viewpoints (`K1`, `K2` for two configuration axes; `K'` for support configurations in FVM) |
 | `D` | feature dimension |
 
-The API follows `torch.nn`: each method is a module in `torchwarp`
-(hyperparameters in the constructor, tensors in `forward`) and a function
-of the same name in `torchwarp.functional` (hyperparameters as
-keyword-only arguments). The `*_from_cost` functions take a precomputed
-cost tensor instead of features. Every input has a leading batch
-dimension `B`. All functions are differentiable. `backend` is always one
-of `"auto"`, `"cuda"` or `"torch"`, see
-[Common behaviour](index.md#common-behaviour).
+The API provides `torch.nn`-style modules (hyperparameters in the
+constructor, tensors in `forward`), functional equivalents in
+`torchwarp.functional`, and `*_from_cost` functions for precomputed cost
+tensors. The distance computations support automatic differentiation.
 
 ```python
 import torchwarp
