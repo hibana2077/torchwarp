@@ -8,16 +8,15 @@
 [![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
-**torchwarp** is an accelerated PyTorch implementation of [uDTW](https://github.com/LeiWangR/uDTW) and [JEANIE](https://github.com/LeiWangR/JEANIE), providing differentiable sequence alignment with optimized CUDA kernels.
+**torchwarp** is an accelerated PyTorch implementation of uDTW and JEANIE, providing differentiable sequence alignment with optimized CUDA kernels.
 
 This repository provides implementations of uDTW, JEANIE, and FVM; with usage examples and simple script for time series prediction task and few-shot action recognition.
 
 ## Documentation
 
+- [API reference](docs/api.md): Module interfaces, functional APIs, tensor shapes, and parameters.
 - [Installation](docs/installation.md): CUDA, uv, and optional dependencies.
-- [Usage](docs/usage.md): step-by-step usage of uDTW, JEANIE, FVM and soft-DTW.
-- [Examples](docs/usage.md#examples): training scripts, experimental setups and results.
-- [API reference](docs/api.md): arguments, shapes and return values.
+- [Usage](docs/usage.md): Usage examples for uDTW, JEANIE, FVM, and Soft-DTW, along with scripts to reproduce the experiments.
 
 ## Installation
 
@@ -27,7 +26,9 @@ From the repository root:
 pip install -e .            # or -e ".[plot]" to also install matplotlib for torchwarp.plot
 ```
 
-CUDA acceleration needs a CUDA-enabled PyTorch build and a CUDA toolkit (`nvcc`) of the same major version; without them torchwarp runs on its PyTorch backend. For CUDA-specific PyTorch builds, uv installation, and optional dependencies, see the [installation guide](docs/installation.md).
+torchwarp provides two backends: custom CUDA kernels (JIT-compiled on first use) and a vectorized PyTorch implementation. The CUDA backend requires a CUDA-enabled PyTorch build and a compatible CUDA toolkit (`nvcc`). Without these, torchwarp automatically falls back to the PyTorch backend.
+
+For CUDA-specific PyTorch builds, uv installation, and optional dependencies, see the [installation guide](docs/installation.md).
 
 ## Example
 
