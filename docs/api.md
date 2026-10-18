@@ -8,8 +8,10 @@ Shapes use these letters:
 | letter | meaning |
 | --- | --- |
 | `B` | batch size (number of sequence pairs) |
-| `N`, `M` | lengths of the two sequences (for JEANIE and FVM, the query and the support) |
-| `K` | number of matching configurations, for example viewpoints (`K1`, `K2` for two configuration axes; `K'` for support configurations in FVM) |
+| `N`, `M` | lengths of the two input sequences |
+| `K` | number of matching configurations (for example, viewpoints) |
+| `K1`, `K2` | sizes of two matching configuration axes |
+| `K'` | number of matching configurations of the second sequence (FVM) |
 | `D` | feature dimension |
 
 The API provides `torch.nn`-style modules (hyperparameters in the
@@ -129,16 +131,16 @@ over all paths.
 | argument | type | default | description |
 | --- | --- | --- | --- |
 | `gamma` | float | `0.1` | Soft minimum temperature $\gamma > 0$. |
-| `max_shift` | int or (int, int) | `1` | Largest change of the viewpoint index between consecutive steps. An int applies to every viewpoint axis; a pair `(azimuth, altitude)` sets the two axes of a two-axis query separately. Values above K - 1 behave like K - 1. |
-| `metric` | str | `"euclidean"` | Base distance between blocks: `"euclidean"`, `"sqeuclidean"` or `"rbf"` (see `rbf_cost`, $\sigma = 0.5$). |
+| `max_shift` | int or (int, int) | `1` | Largest change of the configuration index between consecutive steps. An int applies to every configuration axis; a pair sets the `K1` and `K2` axes separately. Values above K - 1 behave like K - 1. |
+| `metric` | str | `"euclidean"` | Base distance between sequence elements: `"euclidean"`, `"sqeuclidean"` or `"rbf"` (see `rbf_cost`, $\sigma = 0.5$). |
 | `backend` | str | `"auto"` | `"auto"`, `"cuda"` or `"torch"`. |
 
 **forward**`(query, support, *, return_accumulator=False)`
 
 | argument | shape | description |
 | --- | --- | --- |
-| `query` | `[B, K, N, D]` or `[B, K1, K2, N, D]` | Query blocks for each simulated viewpoint (one or two viewpoint axes). |
-| `support` | `[B, M, D]` | Support blocks. |
+| `query` | `[B, K, N, D]` or `[B, K1, K2, N, D]` | First input sequence under each matching configuration (one or two configuration axes). |
+| `support` | `[B, M, D]` | Second input sequence. |
 | `return_accumulator` | bool | Also return the dynamic programming accumulator R. |
 
 **Returns** `distance [B]`, or `(distance, R)` with R `[B, K, N, M]`
@@ -164,15 +166,15 @@ configurations can change freely without transition constraints.
 | argument | type | default | description |
 | --- | --- | --- | --- |
 | `gamma` | float | `0.1` | Soft minimum temperature $\gamma > 0$, used for both reductions. |
-| `metric` | str | `"euclidean"` | Base distance between blocks: `"euclidean"`, `"sqeuclidean"` or `"rbf"` (see `rbf_cost`, $\sigma = 0.5$). |
+| `metric` | str | `"euclidean"` | Base distance between sequence elements: `"euclidean"`, `"sqeuclidean"` or `"rbf"` (see `rbf_cost`, $\sigma = 0.5$). |
 | `backend` | str | `"auto"` | `"auto"`, `"cuda"` or `"torch"`. |
 
 **forward**`(query, support)`
 
 | argument | shape | description |
 | --- | --- | --- |
-| `query` | `[B, K, N, D]`, or more viewpoint axes `[B, K1, K2, N, D]` | Query blocks for each simulated viewpoint. |
-| `support` | `[B, M, D]`, or `[B, K', M, D]` with its own viewpoints | Support blocks. All query and support viewpoint pairs are reduced. |
+| `query` | `[B, K, N, D]` or `[B, K1, K2, N, D]` | First input sequence under each matching configuration. |
+| `support` | `[B, M, D]`, or `[B, K', M, D]` with its own configurations | Second input sequence. All pairs of configurations are reduced. |
 
 **Returns** `distance [B]`.
 
@@ -428,7 +430,7 @@ torchwarp.paths.soft_dtw_per_view(query, support, *, gamma=0.1, metric="euclidea
                                   angles=None)
 ```
 
-soft-DTW applied to each query viewpoint separately. `query` is
+soft-DTW applied to each query configuration separately. `query` is
 `[B, K, N, D]`, `support` is `[B, M, D]`.
 **Returns** a list of K `Alignment`s with cells `(i, j, k)`.
 
@@ -438,7 +440,7 @@ soft-DTW applied to each query viewpoint separately. `query` is
 torchwarp.paths.fvm(query, support, *, gamma=0.1, metric="euclidean", angles=None)
 ```
 
-FVM paths (viewpoint free at every step). Shapes as in `soft_dtw_per_view`.
+FVM paths (configuration free at every step). Shapes as in `soft_dtw_per_view`.
 
 ### `paths.jeanie`
 
@@ -447,8 +449,8 @@ torchwarp.paths.jeanie(query, support, *, gamma=0.1, max_shift=1,
                        metric="euclidean", angles=None, start_view=None)
 ```
 
-JEANIE paths with one viewpoint axis. `start_view` (an index) restricts
-the paths to start at that viewpoint.
+JEANIE paths with one configuration axis. `start_view` (an index) restricts
+the paths to start at that configuration.
 
 ### `paths.optimal_path`
 
@@ -457,7 +459,7 @@ torchwarp.paths.optimal_path(cost, *, max_shift=0, start_view=None)
 ```
 
 Paths with the smallest distance for `cost [B, N, M]` (cells `(i, j)`) or
-`cost [B, K, N, M]` (cells `(i, j, k)`, viewpoint change at most
+`cost [B, K, N, M]` (cells `(i, j, k)`, configuration change at most
 `max_shift` per step).
 
 ---
