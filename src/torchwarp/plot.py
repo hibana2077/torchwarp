@@ -68,13 +68,14 @@ def alignment(a, *, index=0, ax=None, power=0.1, title=None):
 
 
 def uncertainty(a, *, index=0, ax=None, power=0.1, threshold=0.6, hist=True, bin_width=0.2,
-                std=True, title=None):
+                label_every=2, std=True, title=None):
     """Uncertainty on the path, white pixels = high uncertainty (uDTW Fig. 2e).
 
     The plot of ``alignment`` is binarized at ``threshold`` and multiplied by
     sigma = sqrt(Sigma) (``std=True``) or by the variance Sigma (``std=False``);
     the inset is the histogram of these values on the path, with bins and x
-    ticks every ``bin_width`` (edges at multiples of ``bin_width``).
+    ticks every ``bin_width`` (edges at multiples of ``bin_width``) and a tick
+    label every ``label_every`` bins.
     """
     if a.Sigma is None:
         raise ValueError("uncertainty() needs a uDTW Alignment (with variance)")
@@ -100,12 +101,14 @@ def uncertainty(a, *, index=0, ax=None, power=0.1, threshold=0.6, hist=True, bin
         ins.set_xlim(edges[0], edges[-1])
         ins.set_ylabel("Counts", fontsize=5, labelpad=0.5)
         ins.tick_params(labelsize=4.5, length=1, pad=0.5)
-        ins.xaxis.set_major_locator(_ticker().MultipleLocator(bin_width))
+        ins.xaxis.set_major_locator(_ticker().MultipleLocator(label_every * bin_width))
+        ins.xaxis.set_minor_locator(_ticker().MultipleLocator(bin_width))
         ins.xaxis.set_major_formatter(_ticker().FormatStrFormatter("%.1f"))
-        ins.tick_params(axis="x", labelsize=3.6)
+        ins.tick_params(axis="x", which="minor", length=0.6, width=0.3)
         ins.yaxis.set_major_locator(_ticker().MaxNLocator(6))
         ins.set_yticklabels([])
-        ins.grid(True, color="#c8c8c8", linewidth=0.3)
+        ins.grid(True, which="both", axis="x", color="#c8c8c8", linewidth=0.3)
+        ins.grid(True, axis="y", color="#c8c8c8", linewidth=0.3)
         ins.set_axisbelow(True)
         for spine in ins.spines.values():
             spine.set_linewidth(0.4)
