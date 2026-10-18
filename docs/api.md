@@ -52,7 +52,7 @@ torchwarp.UDTW(gamma=1.0, beta=1.0, normalize=False, bandwidth=None, *,
                method="gemm", backend="auto")
 ```
 
-Computes the uncertainty-aware Dynamic Time Warping (uDTW) distance and
+Computes the uncertainty-Dynamic Time Warping (uDTW) distance and
 penalty between sequences.
 
 Pairwise alignment costs are weighted by the combined uncertainty of the
