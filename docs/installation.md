@@ -78,6 +78,7 @@ print(_cuda.available("udtw"), _cuda.available("jeanie"))
 | First call is slow | The extension is being compiled. This happens once per machine and per GPU architecture. |
 | Slow build or a build for the wrong GPU on a shared cache | Set `TORCH_CUDA_ARCH_LIST` to the architectures you use. |
 | `CUDA backend unavailable` | `backend="cuda"` was requested but the inputs are not float32/float64 CUDA tensors, or the extension could not be built. Use `backend="auto"`. |
+| `the CUDA kernel handles sequences of up to 16384 steps` / `up to 16384 cells per anti-diagonal` | The input exceeds the kernel's size limit (uDTW: `min(N, M) <= 16384`; JEANIE: `K1 * K2 * min(T, U) <= 16384`). Shorten the sequences or use fewer viewpoints, or pass `backend="torch"`. See [Limitations](limitations.md#size-limits-of-the-cuda-kernels). |
 
 ## Running the tests
 

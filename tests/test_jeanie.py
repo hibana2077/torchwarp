@@ -6,6 +6,7 @@ import torch
 import torchwarp as fast
 import torchwarp.functional as TF
 from torchwarp import _cuda
+from torchwarp.jeanie import _ops
 from torchwarp.jeanie.functional import _jeanie_dp, _jeanie_dp_features
 
 import golden as G
@@ -223,6 +224,21 @@ def test_fvm_long_sequences_match_torch_backend(K, T, U):
         _values_and_grads(lambda c: TF.fvm_from_cost(c, gamma=0.1, backend="cuda"), cost, "cuda"),
         _values_and_grads(lambda c: TF.fvm_from_cost(c, gamma=0.1, backend="torch"), cost, "cuda"),
         1e-8)
+
+
+@pytest.mark.skipif(not HAS_CUDA, reason="CUDA extension unavailable")
+@pytest.mark.parametrize("backend", ["auto", "cuda"])
+def test_too_many_cells_for_kernel_raises(backend):
+    # K1 * K2 * min(T, U) past the kernel's limit: a clear error, not a silent
+    # switch to the PyTorch backend. At the limit it runs.
+    assert _ops.MAX_KERNEL_CELLS == 64 * 256
+    q, s = torch.randn(1, 64, 257, 2, device="cuda"), torch.randn(1, 257, 2, device="cuda")
+    assert torch.isfinite(TF.jeanie(q[:, :, :256], s[:, :256], gamma=0.1, backend=backend)).all()
+    with pytest.raises(ValueError, match="up to 16384 cells"):
+        TF.jeanie(q, s, gamma=0.1, backend=backend)
+    with pytest.raises(ValueError, match="8\\*8 viewpoints"):
+        TF.jeanie_from_cost(torch.rand(1, 8, 8, 257, 300, device="cuda"), gamma=0.1,
+                            backend=backend)
 
 
 @pytest.mark.skipif(not HAS_CUDA, reason="CUDA extension unavailable")

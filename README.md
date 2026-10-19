@@ -17,6 +17,7 @@ This repository provides implementations of uDTW, JEANIE, and FVM; with usage ex
 - [API reference](docs/api.md): Module interfaces, functional APIs, tensor shapes, and parameters.
 - [Installation](docs/installation.md): CUDA, uv, and optional dependencies.
 - [Usage](docs/usage.md): Usage examples for uDTW, JEANIE, FVM, and Soft-DTW, along with scripts to reproduce the experiments.
+- [Limitations](docs/limitations.md): Numerical precision, mixed precision, determinism, kernel size limits, and performance notes.
 
 ## Installation
 

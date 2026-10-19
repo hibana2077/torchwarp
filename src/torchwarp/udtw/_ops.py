@@ -31,6 +31,11 @@ from . import _autograd, _torch_dp
 
 # ------------------------------------------------------------------ helpers
 
+# Longest sequence the CUDA kernels handle: one block per pair, at most 256
+# threads x 64 rows per thread (pick_shape in csrc/udtw_cuda.cu).
+MAX_KERNEL_LENGTH = 64 * 256
+
+
 def _use_kernel(t: Tensor, backend: str, N: int, M: int) -> bool:
     if backend not in ("auto", "cuda", "torch"):
         raise ValueError("backend must be 'auto', 'cuda' or 'torch'")
@@ -38,6 +43,12 @@ def _use_kernel(t: Tensor, backend: str, N: int, M: int) -> bool:
         return False
     ok = t.is_cuda and t.dtype in (torch.float32, torch.float64) and N <= M
     if ok and _cuda.load("udtw") is not None:
+        if N > MAX_KERNEL_LENGTH:
+            raise ValueError(
+                "uDTW: the CUDA kernel handles sequences of up to {} steps (the shorter of "
+                "the two sequences), got lengths {} and {}. Shorten or downsample the "
+                "sequences, or pass backend='torch' to use the PyTorch implementation, "
+                "which has no such limit but is much slower.".format(MAX_KERNEL_LENGTH, N, M))
         return True
     if backend == "cuda":
         raise RuntimeError(

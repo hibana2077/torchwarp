@@ -5,6 +5,7 @@ import torch
 
 from torchwarp import UDTW, _cuda
 from torchwarp.functional import pairwise_matrices, softmin, softmin_weights, udtw_from_cost
+from torchwarp.udtw import _ops
 
 import golden as G
 from golden import golden
@@ -193,6 +194,17 @@ def test_fused_shared_memory_limit(dtype, past):
         for k, (a, b) in enumerate(zip(got, want)):
             err = ((a.double() - b).abs().max() / b.abs().max()).item()
             assert err < (1e-5 if k < 2 else max(1e-3, 2e-3 * N / 1024)), (k, err)
+
+
+@pytest.mark.skipif(not HAS_CUDA, reason="CUDA extension unavailable")
+@pytest.mark.parametrize("backend", ["auto", "cuda"])
+def test_too_long_for_kernel_raises(backend):
+    # Past the kernel's length limit: a clear error, not a silent switch to
+    # the PyTorch backend.
+    N = _ops.MAX_KERNEL_LENGTH + 1
+    X, S = torch.randn(1, N, 1, device="cuda"), torch.ones(1, N, 1, device="cuda")
+    with pytest.raises(ValueError, match="up to 16384 steps"):
+        UDTW(gamma=0.1, backend=backend)(X, X, S, S)
 
 
 @pytest.mark.skipif(not HAS_CUDA, reason="CUDA extension unavailable")

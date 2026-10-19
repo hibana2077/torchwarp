@@ -38,6 +38,15 @@ the [base distances](#base-distances) `euclidean_cost`,
 `torchwarp.functional`), [`torchwarp.paths`](#torchwarppaths) and
 [`torchwarp.plot`](#torchwarpplot).
 
+Errors common to every method with a `backend` argument: `backend="cuda"`
+raises `RuntimeError` when the CUDA kernel cannot run (inputs not on the
+GPU, or the extension could not be built). With `backend="auto"` or
+`"cuda"`, inputs past the kernels' size limit raise `ValueError`: uDTW,
+soft-DTW and FVM need `min(N, M) <= 16384`, and JEANIE
+`K1 * K2 * min(N, M) <= 16384` (see
+[Limitations](limitations.md#size-limits-of-the-cuda-kernels));
+`backend="torch"` has no such limit.
+
 ---
 
 ## Modules
