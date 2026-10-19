@@ -152,6 +152,41 @@ def test_fused_kernel_matches_unfused(N, M, bandwidth, normalize):
     _assert_all_close(fused, unfused)
 
 
+def _fused_limit(elem):
+    """Largest N such that an N x N problem fits the fused kernel's shared memory."""
+    fits = _cuda.load("udtw").fused_fits
+    lo, hi = 1, 64 * 256  # pick_shape caps N at 64 * kMaxThreads
+    while lo < hi:
+        mid = (lo + hi + 1) // 2
+        lo, hi = (mid, hi) if fits(mid, mid, elem) else (lo, mid - 1)
+    return lo
+
+
+@pytest.mark.skipif(not HAS_CUDA, reason="CUDA extension unavailable")
+@pytest.mark.parametrize("dtype", [torch.float64, torch.float32], ids=["float64", "float32"])
+@pytest.mark.parametrize("past", [0, 1], ids=["at_limit", "past_limit"])
+def test_fused_shared_memory_limit(dtype, past):
+    # Both sides of this GPU's shared-memory limit: past it the fused kernels
+    # keep their buffers in global scratch. gamma = 1 throughout (float32
+    # error grows as gamma shrinks). float64 is checked against the PyTorch
+    # backend; float32 against float64, with a gradient tolerance of
+    # max(1e-3, 2e-3 * N / 1024): float32 gradient error grows with N and
+    # reaches ~1.6e-3 at N = 2609 (A100), while a wrong buffer gives O(1).
+    N = _fused_limit(torch.empty((), dtype=dtype).element_size()) + past
+    inputs = _inputs(1, N, N, D=3)
+    module = UDTW(gamma=1.0, beta=0.7, backend="cuda")
+    got = _run(module, [x.to(dtype) for x in inputs], "cuda")
+    if dtype == torch.float64:
+        want = _run(UDTW(gamma=1.0, beta=0.7, backend="torch"), inputs, "cuda")
+        for a, b in zip(got, want):
+            torch.testing.assert_close(a, b, atol=1e-9, rtol=1e-9)
+    else:
+        want = _run(module, inputs, "cuda")
+        for k, (a, b) in enumerate(zip(got, want)):
+            err = ((a.double() - b).abs().max() / b.abs().max()).item()
+            assert err < (1e-5 if k < 2 else max(1e-3, 2e-3 * N / 1024)), (k, err)
+
+
 @pytest.mark.skipif(not HAS_CUDA, reason="CUDA extension unavailable")
 def test_fused_gradcheck():
     kw = dict(dtype=torch.float64, device="cuda", requires_grad=True)

@@ -285,7 +285,8 @@ __global__ void udtw_backward_kernel(
 //     C = sq / var,  Q = beta * dlog(var)       (Eqs. 8 and 16).
 // G and dG use the same diagonal-major layout as R and P, so every global
 // access is coalesced; the next diagonal's operands are prefetched into
-// registers. Shared memory stays O(N + M), which preserves full occupancy.
+// registers. Shared memory stays O(N + M), which preserves full occupancy;
+// past the device's opt-in limit the same buffer lives in global scratch.
 // (Staging a row-major G tile in shared memory, or walking it diagonally in
 // global memory, were both measured slower on a 64 KiB-smem / 6 MiB-L2 GPU.)
 // The backward pass returns dG, dx2, dy2, dvx, dvy; row sums stay in
@@ -305,6 +306,7 @@ __global__ void udtw_fused_forward_kernel(
     scalar_t* __restrict__ P,
     scalar_t* __restrict__ out_r,
     scalar_t* __restrict__ out_p,
+    scalar_t* __restrict__ scratch,
     const int N,
     const int M,
     const scalar_t gamma,
@@ -319,7 +321,9 @@ __global__ void udtw_fused_forward_kernel(
   x2 += (long long)b * N; vx += (long long)b * N;
   y2 += (long long)b * M; vy += (long long)b * M;
 
-  scalar_t* ys = reinterpret_cast<scalar_t*>(smem_raw);  // y2 [M]
+  scalar_t* ys = scratch != nullptr                       // y2 [M]
+      ? scratch + (long long)b * (2 * M + 6 * N)
+      : reinterpret_cast<scalar_t*>(smem_raw);
   scalar_t* vys = ys + M;                                // vy [M]
   scalar_t* Rb = vys + M;                                // [3][N]
   scalar_t* Pb = Rb + 3 * N;                             // [3][N]
@@ -433,6 +437,7 @@ __global__ void udtw_fused_backward_kernel(
     scalar_t* __restrict__ dy2,
     scalar_t* __restrict__ dvx,
     scalar_t* __restrict__ dvy,
+    scalar_t* __restrict__ scratch,
     const int N,
     const int M,
     const scalar_t gamma,
@@ -449,7 +454,9 @@ __global__ void udtw_fused_backward_kernel(
   y2 += (long long)b * M; vy += (long long)b * M;
   dy2 += (long long)b * M; dvy += (long long)b * M;
 
-  scalar_t* ys = reinterpret_cast<scalar_t*>(smem_raw);
+  scalar_t* ys = scratch != nullptr
+      ? scratch + (long long)b * (4 * M + 12 * N)
+      : reinterpret_cast<scalar_t*>(smem_raw);
   scalar_t* vys = ys + M;
   scalar_t* dys = vys + M;
   scalar_t* dvys = dys + M;
@@ -702,6 +709,19 @@ bool fused_fits(int64_t N, int64_t M, int64_t elem) {
   return (int64_t)fused_smem_bytes(N, M, true, elem) <= fused_smem_limit();
 }
 
+// The fused kernels' per-block buffer: shared memory up to the device's
+// opt-in limit, otherwise a global scratch tensor (long sequences).
+struct FusedBuffer {
+  torch::Tensor scratch;
+  size_t smem;
+};
+
+FusedBuffer fused_buffer(const torch::Tensor& like, int64_t B, int N, int M, bool backward) {
+  const size_t bytes = fused_smem_bytes(N, M, backward, like.element_size());
+  if ((int64_t)bytes <= fused_smem_limit()) return {torch::Tensor(), bytes};
+  return {torch::empty({B * (int64_t)(bytes / like.element_size())}, like.options()), 0};
+}
+
 template <typename Kernel>
 void allow_smem(Kernel kernel, size_t smem) {
   if (smem > kMaxStaticSmem) {
@@ -733,20 +753,20 @@ std::vector<torch::Tensor> udtw_fused_forward(
   auto out_p = torch::empty({B}, G.options());
   if (B == 0) return {out_r, out_p, R, P};
 
-  const size_t smem = fused_smem_bytes(N, M, false, G.element_size());
-  TORCH_CHECK((int64_t)smem <= fused_smem_limit(), "problem too large for the fused kernel");
+  const FusedBuffer buf = fused_buffer(G, B, N, M, false);
   const LaunchShape shape = pick_shape(N);
   auto stream = at::cuda::getCurrentCUDAStream();
 
   AT_DISPATCH_FLOATING_TYPES(G.scalar_type(), "udtw_fused_forward", [&] {
     UDTW_DISPATCH_ROWS(shape.rows, [&] {
       auto kernel = udtw_fused_forward_kernel<scalar_t, ROWS>;
-      allow_smem(kernel, smem);
-      kernel<<<B, shape.threads, smem, stream>>>(
+      allow_smem(kernel, buf.smem);
+      kernel<<<B, shape.threads, buf.smem, stream>>>(
           G.data_ptr<scalar_t>(), x2.data_ptr<scalar_t>(), y2.data_ptr<scalar_t>(),
           vx.data_ptr<scalar_t>(), vy.data_ptr<scalar_t>(),
           R.data_ptr<scalar_t>(), P.data_ptr<scalar_t>(),
           out_r.data_ptr<scalar_t>(), out_p.data_ptr<scalar_t>(),
+          buf.scratch.defined() ? buf.scratch.data_ptr<scalar_t>() : nullptr,
           N, M, (scalar_t)gamma, (scalar_t)beta, (scalar_t)eps, (scalar_t)bandwidth);
     });
   });
@@ -770,22 +790,22 @@ std::vector<torch::Tensor> udtw_fused_backward(
   auto dvy = torch::empty_like(vy);
   if (B == 0) return {dG, dx2, dy2, dvx, dvy};
 
-  const size_t smem = fused_smem_bytes(N, M, true, G.element_size());
-  TORCH_CHECK((int64_t)smem <= fused_smem_limit(), "problem too large for the fused kernel");
+  const FusedBuffer buf = fused_buffer(G, B, N, M, true);
   const LaunchShape shape = pick_shape(N);
   auto stream = at::cuda::getCurrentCUDAStream();
 
   AT_DISPATCH_FLOATING_TYPES(G.scalar_type(), "udtw_fused_backward", [&] {
     UDTW_DISPATCH_ROWS(shape.rows, [&] {
       auto kernel = udtw_fused_backward_kernel<scalar_t, ROWS>;
-      allow_smem(kernel, smem);
-      kernel<<<B, shape.threads, smem, stream>>>(
+      allow_smem(kernel, buf.smem);
+      kernel<<<B, shape.threads, buf.smem, stream>>>(
           G.data_ptr<scalar_t>(), x2.data_ptr<scalar_t>(), y2.data_ptr<scalar_t>(),
           vx.data_ptr<scalar_t>(), vy.data_ptr<scalar_t>(),
           R.data_ptr<scalar_t>(), P.data_ptr<scalar_t>(),
           grad_r.data_ptr<scalar_t>(), grad_p.data_ptr<scalar_t>(),
           dG.data_ptr<scalar_t>(), dx2.data_ptr<scalar_t>(), dy2.data_ptr<scalar_t>(),
           dvx.data_ptr<scalar_t>(), dvy.data_ptr<scalar_t>(),
+          buf.scratch.defined() ? buf.scratch.data_ptr<scalar_t>() : nullptr,
           N, M, (scalar_t)gamma, (scalar_t)beta, (scalar_t)eps);
     });
   });
@@ -798,5 +818,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("backward", &udtw_backward, "uDTW backward (CUDA/HIP, diagonal-major layout)");
   m.def("fused_forward", &udtw_fused_forward, "uDTW forward with in-kernel cost construction");
   m.def("fused_backward", &udtw_fused_backward, "uDTW backward with in-kernel cost construction");
-  m.def("fused_fits", &fused_fits, "whether (N, M, elem_size) fits the fused kernel");
+  m.def("fused_fits", &fused_fits,
+        "whether (N, M, elem_size) fits the fused kernels' shared memory (else global scratch)");
 }
