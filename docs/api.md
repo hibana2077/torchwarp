@@ -535,14 +535,15 @@ viewpoints if there are any).
 
 ```python
 torchwarp.plot.uncertainty(a, *, index=0, ax=None, power=0.1, threshold=0.6,
-                           hist=True, bin_width=0.2,
+                           hist=True, bin_width=0.2, label_every=2,
                            std=True, title=None)
 ```
 
 The binarized path of a uDTW `Alignment` multiplied by $\sigma = \sqrt{\Sigma}$
 (`std=True`) or by the variance $\Sigma$ (`std=False`) (white = high
 uncertainty), with a histogram of these values on the path when `hist=True`
-(bins and x ticks every `bin_width`, edges at multiples of `bin_width`).
+(bins and x ticks every `bin_width`, edges at multiples of `bin_width`, and
+a tick label every `label_every` bins).
 
 ### `plot.twoway`
 
