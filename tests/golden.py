@@ -43,6 +43,18 @@ ACCUMULATOR_COST = [(4, 5, 7, 1), (3, 7, 4, 2), (1, 4, 4, 0)]
 # second-order gradients of the distance alone (no accumulator)
 SECOND_ORDER = ["jeanie_cost", "jeanie_features", "fvm", "soft_dtw"]
 
+# Longer sequences than the grids above, so that the comparison with the
+# official code also covers diagonals spread over several warps.
+UDTW_LARGE = [(2, 40, 50)]                     # (B, N, M)
+LARGE_COST = [                                 # (official function, cost shape, max shift)
+    ("soft_dtw", (60, 70), None),
+    ("jeanie_1d_from_cost", (5, 30, 40), 2),
+    ("jeanie_1d_from_cost", (4, 35, 20), 1),   # T > U
+    ("jeanie_2d_from_cost", (3, 3, 20, 25), (1, 1)),
+    ("fvm_query_only_1d", (5, 40, 50), None),
+    ("fvm_query_only_2d", (2, 3, 30, 35), None),
+]
+
 
 def key(name, /, **params):
     return name + "".join("|{}={!r}".format(k, params[k]) for k in sorted(params))

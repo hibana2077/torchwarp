@@ -52,6 +52,14 @@ def test_matches_reference(backend, device, N, M, gamma, normalize):
 
 
 @pytest.mark.parametrize("backend,device", BACKENDS, ids=IDS)
+@pytest.mark.parametrize("B,N,M", G.UDTW_LARGE)
+def test_large_matches_reference(backend, device, B, N, M):
+    ref = golden("udtw.large", B=B, N=N, M=M)
+    got = _run(UDTW(gamma=0.1, beta=0.7, backend=backend), ref["inputs"], device)
+    _assert_all_close(got, ref["outputs"])
+
+
+@pytest.mark.parametrize("backend,device", BACKENDS, ids=IDS)
 @pytest.mark.parametrize("N,M,bandwidth", G.UDTW_BANDS)
 def test_bandwidth_matches_reference(backend, device, N, M, bandwidth):
     ref = golden("udtw.bandwidth", N=N, M=M, bandwidth=bandwidth)
@@ -185,6 +193,18 @@ def test_fused_shared_memory_limit(dtype, past):
         for k, (a, b) in enumerate(zip(got, want)):
             err = ((a.double() - b).abs().max() / b.abs().max()).item()
             assert err < (1e-5 if k < 2 else max(1e-3, 2e-3 * N / 1024)), (k, err)
+
+
+@pytest.mark.skipif(not HAS_CUDA, reason="CUDA extension unavailable")
+@pytest.mark.parametrize("past", [0, 1], ids=["shared_memory", "global_scratch"])
+def test_cuda_is_bitwise_deterministic(past):
+    # The uDTW kernels use no atomics: repeated runs give identical bits.
+    N = _fused_limit(8) + past
+    inputs = _inputs(4, N, N)
+    module = UDTW(gamma=0.1, beta=0.7, backend="cuda")
+    first = _run(module, inputs, "cuda")
+    for _ in range(3):
+        assert all(torch.equal(a, b) for a, b in zip(_run(module, inputs, "cuda"), first))
 
 
 @pytest.mark.skipif(not HAS_CUDA, reason="CUDA extension unavailable")
