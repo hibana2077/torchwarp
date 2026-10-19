@@ -80,6 +80,11 @@ for beta in G.UDTW_BETAS:
     c["inputs"] = udtw_inputs(g, 2, 4, 6)
     c["outputs"] = udtw_run(c["inputs"], beta=beta, gamma=0.1)
 
+for B, N, M in G.UDTW_LARGE:
+    c, g = case("udtw.large", B=B, N=N, M=M)
+    c["inputs"] = udtw_inputs(g, B, N, M)
+    c["outputs"] = udtw_run(c["inputs"], gamma=0.1)
+
 c, g = case("udtw.pairwise_matrices")
 c["inputs"] = udtw_inputs(g, 2, 4, 6)
 c["outputs"] = detach(U.pairwise_matrices(*c["inputs"], beta=0.5))
@@ -173,6 +178,12 @@ for name, shape in G.FVM_CASES:
     c["value"], c["grad"] = value_and_grad(lambda x: getattr(J, name)(x, 0.1), c["cost"])
     c["batch"] = torch.rand(3, *shape, generator=g, **f64)
     c["batch_value"] = torch.stack([getattr(J, name)(x, 0.1) for x in c["batch"]])
+
+for name, shape, shift in G.LARGE_COST:
+    c, g = case("jeanie.large", name=name, shape=shape)
+    c["cost"] = torch.rand(*shape, generator=g, **f64)
+    args = (0.1,) if shift is None else (0.1, *((shift,) if isinstance(shift, int) else shift))
+    c["value"], c["grad"] = value_and_grad(lambda x: getattr(J, name)(x, *args), c["cost"])
 
 c, g = case("jeanie.softmin")
 c["v"] = v = torch.randn(4, 5, generator=g, **f64)

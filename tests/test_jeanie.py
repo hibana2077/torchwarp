@@ -6,6 +6,7 @@ import torch
 import torchwarp as fast
 import torchwarp.functional as TF
 from torchwarp import _cuda
+from torchwarp.jeanie import _ops
 from torchwarp.jeanie.functional import _jeanie_dp, _jeanie_dp_features
 
 import golden as G
@@ -100,6 +101,23 @@ def test_fvm(backend, device, name, shape):
                   ref["batch_value"])
 
 
+def _large_fn(name, shift, backend):
+    if name == "soft_dtw":
+        return lambda c: TF.soft_dtw_from_cost(c[None], gamma=0.1, backend=backend)[0]
+    if name.startswith("fvm"):
+        return lambda c: TF.fvm_from_cost(c[None], gamma=0.1, backend=backend)[0]
+    return lambda c: TF.jeanie_from_cost(c[None], gamma=0.1, max_shift=shift, backend=backend)[0]
+
+
+@pytest.mark.parametrize("backend,device", BACKENDS, ids=IDS)
+@pytest.mark.parametrize("name,shape,shift", G.LARGE_COST)
+def test_large_matches_reference(backend, device, name, shape, shift):
+    ref = golden("jeanie.large", name=name, shape=shape)
+    v, g = _value_and_grad(_large_fn(name, shift, backend), ref["cost"], device)
+    _assert_close(v, ref["value"])
+    _assert_close(g, ref["grad"])
+
+
 def test_softmin_matches_reference():
     ref = golden("jeanie.softmin")
     torch.testing.assert_close(TF.softmin(ref["v"], 0.3, dim=1), ref["outputs"][0])
@@ -153,6 +171,102 @@ def test_large_problem_uses_global_scratch():
     a = _jeanie_dp(cost, 0.1, 2, 0, "torch")[0]
     b = _jeanie_dp(cost.cuda(), 0.1, 2, 0, "cuda")[0].cpu()
     _assert_close(b, a)
+
+
+def _values_and_grads(fn, inputs, device):
+    xs = [x.detach().to(device).requires_grad_(True) for x in inputs]
+    out = fn(*xs)
+    return [out.detach()] + list(torch.autograd.grad(out.sum(), xs))
+
+
+def _assert_rel_close(got, want, tol):
+    for a, b in zip(got, want):
+        err = ((a - b).abs().max() / b.abs().max()).item()
+        assert err < tol, err
+
+
+# Shapes that cross the CUDA kernel's per-thread ITEMS dispatch (cells per
+# diagonal = K * min(T, U), from 257 to 8192) and its 48 KiB shared-memory /
+# global-scratch switch (float64: T * K > 1024 in the backward pass, > 2048
+# in the forward pass); (5, 300, 200) has T > U.
+KERNEL_SHAPES = [(1, 257, 300, 0), (5, 205, 220, 2), (5, 300, 200, 1),
+                 (16, 130, 140, 2), (64, 128, 130, 1)]
+
+
+@pytest.mark.skipif(not HAS_CUDA, reason="CUDA extension unavailable")
+@pytest.mark.parametrize("K,T,U,shift", KERNEL_SHAPES)
+@pytest.mark.parametrize("path", ["cost", "euclidean", "sqeuclidean"])
+def test_kernel_shapes_match_torch_backend(K, T, U, shift, path):
+    g = torch.Generator().manual_seed(K * T * U)
+    f64 = dict(dtype=torch.float64, generator=g)
+    if path == "cost":
+        inputs = [torch.rand(1, K, T, U, **f64)]
+
+        def run(backend):
+            return lambda c: TF.jeanie_from_cost(c, gamma=0.1, max_shift=shift, backend=backend)
+    else:
+        inputs = [torch.randn(1, K, T, 6, **f64), torch.randn(1, U, 6, **f64)]
+
+        def run(backend):
+            return lambda q, s: TF.jeanie(q, s, gamma=0.1, max_shift=shift, metric=path,
+                                          backend=backend)
+    _assert_rel_close(_values_and_grads(run("cuda"), inputs, "cuda"),
+                      _values_and_grads(run("torch"), inputs, "cuda"), 1e-8)
+
+
+@pytest.mark.skipif(not HAS_CUDA, reason="CUDA extension unavailable")
+@pytest.mark.parametrize("K,T,U", [(5, 200, 220), (2, 1100, 1110)])
+def test_fvm_long_sequences_match_torch_backend(K, T, U):
+    # (2, 1100, 1110): the soft-DTW backward pass runs on global scratch.
+    cost = [torch.rand(2, K, T, U, dtype=torch.float64,
+                       generator=torch.Generator().manual_seed(T))]
+    _assert_rel_close(
+        _values_and_grads(lambda c: TF.fvm_from_cost(c, gamma=0.1, backend="cuda"), cost, "cuda"),
+        _values_and_grads(lambda c: TF.fvm_from_cost(c, gamma=0.1, backend="torch"), cost, "cuda"),
+        1e-8)
+
+
+@pytest.mark.skipif(not HAS_CUDA, reason="CUDA extension unavailable")
+@pytest.mark.parametrize("backend", ["auto", "cuda"])
+def test_too_many_cells_for_kernel_raises(backend):
+    # K1 * K2 * min(T, U) past the kernel's limit: a clear error, not a silent
+    # switch to the PyTorch backend. At the limit it runs.
+    assert _ops.MAX_KERNEL_CELLS == 64 * 256
+    q, s = torch.randn(1, 64, 257, 2, device="cuda"), torch.randn(1, 257, 2, device="cuda")
+    assert torch.isfinite(TF.jeanie(q[:, :, :256], s[:, :256], gamma=0.1, backend=backend)).all()
+    with pytest.raises(ValueError, match="up to 16384 cells"):
+        TF.jeanie(q, s, gamma=0.1, backend=backend)
+    with pytest.raises(ValueError, match="8\\*8 viewpoints"):
+        TF.jeanie_from_cost(torch.rand(1, 8, 8, 257, 300, device="cuda"), gamma=0.1,
+                            backend=backend)
+
+
+@pytest.mark.skipif(not HAS_CUDA, reason="CUDA extension unavailable")
+def test_cuda_determinism():
+    # The cost path is bitwise reproducible, and so are the value and query
+    # gradient of the fused path. Its support gradient is summed with
+    # atomicAdd over the K viewpoints that share a support frame, so the last
+    # bits may change between runs (docs/limitations.md); K = 64 on global
+    # scratch makes that visible.
+    g = torch.Generator().manual_seed(0)
+    kw = dict(dtype=torch.float64, generator=g)
+    cost = [torch.rand(4, 64, 128, 130, **kw)]
+    q, s = torch.randn(4, 64, 128, 8, **kw), torch.randn(4, 130, 8, **kw)
+
+    def from_cost(c):
+        return TF.jeanie_from_cost(c, gamma=0.1, max_shift=1, backend="cuda")
+
+    def fused(a, b):
+        return TF.jeanie(a, b, gamma=0.1, max_shift=1, backend="cuda")
+
+    first_cost = _values_and_grads(from_cost, cost, "cuda")
+    first_fused = _values_and_grads(fused, (q, s), "cuda")
+    for _ in range(3):
+        assert all(torch.equal(a, b) for a, b in
+                   zip(_values_and_grads(from_cost, cost, "cuda"), first_cost))
+        value, d_query, d_support = _values_and_grads(fused, (q, s), "cuda")
+        assert torch.equal(value, first_fused[0]) and torch.equal(d_query, first_fused[1])
+        _assert_rel_close([d_support], [first_fused[2]], 1e-12)  # last bits only
 
 
 def test_end_to_end_feature_gradients():

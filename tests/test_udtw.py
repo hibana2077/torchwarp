@@ -5,6 +5,7 @@ import torch
 
 from torchwarp import UDTW, _cuda
 from torchwarp.functional import pairwise_matrices, softmin, softmin_weights, udtw_from_cost
+from torchwarp.udtw import _ops
 
 import golden as G
 from golden import golden
@@ -48,6 +49,14 @@ def test_matches_reference(backend, device, N, M, gamma, normalize):
     ref = golden("udtw.matches", N=N, M=M, gamma=gamma, normalize=normalize)
     got = _run(UDTW(gamma=gamma, beta=0.7, normalize=normalize, backend=backend),
                ref["inputs"], device)
+    _assert_all_close(got, ref["outputs"])
+
+
+@pytest.mark.parametrize("backend,device", BACKENDS, ids=IDS)
+@pytest.mark.parametrize("B,N,M", G.UDTW_LARGE)
+def test_large_matches_reference(backend, device, B, N, M):
+    ref = golden("udtw.large", B=B, N=N, M=M)
+    got = _run(UDTW(gamma=0.1, beta=0.7, backend=backend), ref["inputs"], device)
     _assert_all_close(got, ref["outputs"])
 
 
@@ -185,6 +194,29 @@ def test_fused_shared_memory_limit(dtype, past):
         for k, (a, b) in enumerate(zip(got, want)):
             err = ((a.double() - b).abs().max() / b.abs().max()).item()
             assert err < (1e-5 if k < 2 else max(1e-3, 2e-3 * N / 1024)), (k, err)
+
+
+@pytest.mark.skipif(not HAS_CUDA, reason="CUDA extension unavailable")
+@pytest.mark.parametrize("backend", ["auto", "cuda"])
+def test_too_long_for_kernel_raises(backend):
+    # Past the kernel's length limit: a clear error, not a silent switch to
+    # the PyTorch backend.
+    N = _ops.MAX_KERNEL_LENGTH + 1
+    X, S = torch.randn(1, N, 1, device="cuda"), torch.ones(1, N, 1, device="cuda")
+    with pytest.raises(ValueError, match="up to 16384 steps"):
+        UDTW(gamma=0.1, backend=backend)(X, X, S, S)
+
+
+@pytest.mark.skipif(not HAS_CUDA, reason="CUDA extension unavailable")
+@pytest.mark.parametrize("past", [0, 1], ids=["shared_memory", "global_scratch"])
+def test_cuda_is_bitwise_deterministic(past):
+    # The uDTW kernels use no atomics: repeated runs give identical bits.
+    N = _fused_limit(8) + past
+    inputs = _inputs(4, N, N)
+    module = UDTW(gamma=0.1, beta=0.7, backend="cuda")
+    first = _run(module, inputs, "cuda")
+    for _ in range(3):
+        assert all(torch.equal(a, b) for a, b in zip(_run(module, inputs, "cuda"), first))
 
 
 @pytest.mark.skipif(not HAS_CUDA, reason="CUDA extension unavailable")

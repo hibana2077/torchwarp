@@ -54,7 +54,8 @@ def load(name):
         _ERROR[name] = exc
         warnings.warn(
             "torchwarp: could not build the {} CUDA extension ({}: {}). Falling back to "
-            "the portable PyTorch backend, which is much slower on GPU. Set "
+            "the portable PyTorch backend, which is much slower on GPU and, in float32, "
+            "less accurate on long sequences (docs/limitations.md). Set "
             "TORCHWARP_VERBOSE=1 to see the build log.".format(
                 name, type(exc).__name__, str(exc).splitlines()[0] if str(exc) else ""),
             RuntimeWarning,

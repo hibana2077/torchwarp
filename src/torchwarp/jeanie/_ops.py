@@ -35,13 +35,27 @@ from . import _autograd, _torch_dp
 
 # ------------------------------------------------------------------ helpers
 
-def _use_kernel(t: Tensor, backend: str) -> bool:
+# Most cells per anti-diagonal (K1 * K2 viewpoints x min(T, U) frames) the
+# CUDA kernels handle: one block per pair, at most 256 threads x 64 cells per
+# thread (pick_shape in csrc/jeanie_cuda.cu).
+MAX_KERNEL_CELLS = 64 * 256
+
+
+def _use_kernel(t: Tensor, backend: str, K1: int, K2: int, T: int, U: int) -> bool:
     if backend not in ("auto", "cuda", "torch"):
         raise ValueError("backend must be 'auto', 'cuda' or 'torch'")
     if backend == "torch":
         return False
     ok = t.is_cuda and t.dtype in (torch.float32, torch.float64)
     if ok and _cuda.load("jeanie") is not None:
+        cells = K1 * K2 * min(T, U)
+        if cells > MAX_KERNEL_CELLS:
+            raise ValueError(
+                "JEANIE: the CUDA kernel handles up to {} cells per anti-diagonal "
+                "(viewpoints K1*K2 x min(T, U) frames), got {} = {}*{} viewpoints x "
+                "min({}, {}) frames. Use fewer viewpoints or shorter sequences, or pass "
+                "backend='torch' to use the PyTorch implementation, which has no such "
+                "limit but is much slower.".format(MAX_KERNEL_CELLS, cells, K1, K2, T, U))
         return True
     if backend == "cuda":
         raise RuntimeError(
@@ -97,7 +111,7 @@ def _register_autocast(op):
 def dp(cost: Tensor, s1: int, s2: int, gamma: float, backend: str,
        natural_R: bool) -> Tuple[Tensor, Tensor, Tensor]:
     B, K1, K2, T, U = cost.shape
-    if _use_kernel(cost, backend):
+    if _use_kernel(cost, backend, K1, K2, T, U):
         out, R_d = _cuda.load("jeanie").forward(_to_diag(cost), K1, K2, T, U, s1, s2, gamma)
         R = _from_diag(R_d, K1, K2, T, U) if natural_R else cost.new_empty(0)
         return out, R_d, R
@@ -117,7 +131,7 @@ def dp_backward(cost: Tensor, R_d: Tensor, grad_out: Tensor, grad_R: Optional[Te
                 s1: int, s2: int, gamma: float, backend: str) -> Tensor:
     B, K1, K2, T, U = cost.shape
     grad_out = grad_out.contiguous()
-    if _use_kernel(cost, backend):
+    if _use_kernel(cost, backend, K1, K2, T, U):
         gR = None if grad_R is None else _to_diag(grad_R)
         d = _cuda.load("jeanie").backward(_to_diag(cost), R_d, grad_out, gR, K1, K2, T, U, s1, s2, gamma)
         return _from_diag(d, K1, K2, T, U)
@@ -147,7 +161,7 @@ def features(query: Tensor, support: Tensor, s1: int, s2: int, gamma: float, met
     q = query.reshape(B, K * T, D)                       # (n, t) order, no copy
     q_sq = torch.linalg.vecdot(q, q).view(B, K, T).transpose(1, 2).contiguous()  # [B,T,K]
     s_sq = torch.linalg.vecdot(support, support)
-    if _use_kernel(query, backend):
+    if _use_kernel(query, backend, K1, K2, T, U):
         G = torch.bmm(support, q.transpose(1, 2))        # [B, U, K*T]
         perm, _ = diag_perm_unt(T, U, K, query.device)
         G = torch.index_select(G.view(B, U * K * T), 1, perm).view(B, T * U, K)
@@ -189,7 +203,7 @@ def features_backward(query: Tensor, support: Tensor, R_d: Tensor, G: Tensor, q_
     U, K = support.shape[1], K1 * K2
     q = query.reshape(B, K * T, D)
     grad_out = grad_out.contiguous()
-    if _use_kernel(query, backend):
+    if _use_kernel(query, backend, K1, K2, T, U):
         gR = None if grad_R is None else _to_diag(grad_R)
         dG, dq2, ds2 = _cuda.load("jeanie").fused_backward(
             G, q_sq, s_sq, R_d, grad_out, gR, K1, K2, T, U, s1, s2, gamma, metric)
